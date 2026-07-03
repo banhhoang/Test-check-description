@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
 import requests
+import io
 
 # ==========================================
-# 1. CẤU HÌNH & MASTER RULES ĐẦY ĐỦ
+# 1. CẤU HÌNH & THƯ VIỆN MASTER RULES
 # ==========================================
 CLIENT_ID = "b0B8QFDQ7AjTD4JKkAPRtCXLeczroWN0RIstnSMak4H6lIWg"
 CLIENT_SECRET = "NYMdqqKvoshhFoVYYtuMZ2NitAkcMPFiBHkm7pInrlcXR6jJU2lk3HhmXupEKNfx"
@@ -22,6 +23,7 @@ NEXAR_MAPPING = {
     "Số cực": ["number of positions", "positions"]
 }
 
+# Đầy đủ Master Rules từ yêu cầu của bạn
 MASTER_RULES = {
     "RES-SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Công suất", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "RES-DIP": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Công suất", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
@@ -137,7 +139,7 @@ MASTER_RULES = {
 }
 
 # ==========================================
-# 2. CÁC HÀM XỬ LÝ API & DỮ LIỆU
+# 2. HÀM XỬ LÝ (API & LOGIC)
 # ==========================================
 def get_token():
     url = "https://api.digikey.com/v1/oauth2/token"
@@ -155,11 +157,10 @@ def get_digikey_data(mpn, token):
         return r.json() if r.status_code == 200 else None
     except: return None
 
-def extract_and_format(data, prefix):
+def generate_standard_desc(data, prefix):
     if not data or "ProductParameters" not in data: return None
     params = data.get("ProductParameters", [])
     spec_dict = {p.get("Parameter", "").lower(): p.get("Value", "").replace(",", "") for p in params}
-    
     rule = MASTER_RULES.get(prefix)
     if not rule: return None
     
@@ -171,15 +172,19 @@ def extract_and_format(data, prefix):
                 found = spec_dict[key]
                 break
         values.append(found)
-    
-    desc = f"{prefix};" + ",".join(values)
-    # Logic gọt chữ (nếu quá 40 ký tự thì gọt)
-    if len(desc) > 40:
+    return f"{prefix};" + ",".join(values)
+
+def get_suggestion(desc, prefix):
+    rule = MASTER_RULES.get(prefix)
+    if not rule: return desc
+    while len(desc) > 40 and rule["trunc"]:
+        attr_to_remove = rule["trunc"].pop(0)
+        # Tạm thời gọt bằng cách cắt chuỗi để đảm bảo <40, logic thực tế sẽ cần phức tạp hơn
         desc = desc[:37] + "..."
     return desc
 
 # ==========================================
-# 3. GIAO DIỆN CHÍNH
+# 3. GIAO DIỆN STREAMLIT & XUẤT FILE
 # ==========================================
 st.title("🛠️ SMT BOM Checker (DigiKey API)")
 uploaded_file = st.file_uploader("Upload BOM Excel", type=["xlsx"])
@@ -188,18 +193,47 @@ if uploaded_file:
     df = pd.read_excel(uploaded_file)
     if st.button("🚀 Chạy kiểm tra"):
         token = get_token()
-        results = []
+        status_list, api_desc_list, suggest_list, note_list = [], [], [], []
+        
         for _, row in df.iterrows():
-            desc_engineer = str(row.get('Mô tả/Yêu cầu kỹ thuật', ''))
+            desc_eng = str(row.get('Mô tả/Yêu cầu kỹ thuật', ''))
             mpn = str(row.get('Mã NSX (Tham khảo)', ''))
-            prefix = desc_engineer.split(";")[0] if ";" in desc_engineer else ""
+            
+            # Kiểm tra lỗi cơ bản
+            if pd.isna(mpn) or mpn == 'nan':
+                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Dòng này bị bỏ trống Mã NSX nên không thể tra cứu API")
+                continue
+            if ";" not in desc_eng:
+                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Lỗi format: Thiếu dấu chấm phẩy (;)")
+                continue
+                
+            prefix = desc_eng.split(";")[0]
+            if prefix not in MASTER_RULES:
+                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append(f"Sai chuẩn Tiền tố (Của bạn: {prefix})")
+                continue
             
             data = get_digikey_data(mpn, token)
-            if data:
-                standard_desc = extract_and_format(data, prefix)
-                results.append("🟢 PASS" if standard_desc == desc_engineer else f"🔴 FAIL (Chuẩn: {standard_desc})")
+            if not data:
+                status_list.append("🟡 UNVERIFIED"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Hệ thống DigiKey API không có dữ liệu cho mã NSX")
             else:
-                results.append("🟠 CHECK MANUALLY")
+                std_desc = generate_standard_desc(data, prefix)
+                if std_desc == desc_eng:
+                    if len(std_desc) <= 40:
+                        status_list.append("🟢 PASS"); api_desc_list.append(std_desc); suggest_list.append(std_desc); note_list.append("Khớp 100% với dữ liệu hãng")
+                    else:
+                        status_list.append("🟡 WARNING"); api_desc_list.append(std_desc); suggest_list.append(get_suggestion(std_desc, prefix)); note_list.append("Mô tả đúng cấu trúc API nhưng vượt 40 ký tự.")
+                else:
+                    status_list.append("🔴 FAIL"); api_desc_list.append(std_desc); suggest_list.append("-"); note_list.append("Thông số mô tả không khớp với thông số thực tế của Mã NSX từ API")
         
-        df["Result"] = results
+        df["Status"] = status_list
+        df["Mô tả API"] = api_desc_list
+        df["Suggest"] = suggest_list
+        df["Note"] = note_list
+        
         st.dataframe(df)
+        
+        # Xuất Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False)
+        st.download_button("📥 Tải file BOM_Check_API_Result.xlsx", data=output, file_name="BOM_Check_API_Result.xlsx")
