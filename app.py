@@ -157,7 +157,7 @@ def get_digikey_data(mpn, token):
 # ==========================================
 # 3. GIAO DIỆN STREAMLIT
 # ==========================================
-st.title("🛠️ SMT BOM Checker (DigiKey API)")
+st.title("🛠️ Check Description (DigiKey API)")
 uploaded_file = st.file_uploader("Upload BOM Excel", type=["xlsx"])
 
 if uploaded_file:
