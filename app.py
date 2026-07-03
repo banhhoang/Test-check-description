@@ -7,31 +7,27 @@ import re
 # ==========================================
 # 1. CẤU HÌNH & QUY TẮC (MASTER RULES)
 # ==========================================
-CLIENT_ID = "8465b917-78b5-4f5b-bfab-f12558ad6e5a"
-CLIENT_SECRET = "eDR1QWB7G51Q62a2FPGZOstwxVEuwcxVapvn"
+CLIENT_ID = "b0B8QFDQ7AjTD4JKkAPRtCXLeczroWN0RIstnSMak4H6lIWg"
+CLIENT_SECRET = "NYMdqqKvoshhFoVYYtuMZ2NitAkcMPFiBHkm7pInrlcXR6jJU2lk3HhmXupEKNfx"
 
 NEXAR_MAPPING = {
-    "Giá trị": ["resistance", "capacitance", "inductance"],
+    "Giá trị": ["resistance", "capacitance", "inductance", "resistance (ohms)"],
     "Sai số": ["tolerance"],
-    "Kích thước": ["package / case", "case/package", "case code - mm", "size / dimension"],
+    "Kích thước": ["package / case", "case/package", "case code - mm", "size / dimension", "supplier device package"],
     "Công suất": ["power (watts)", "power rating", "power"],
     "Điện áp": ["voltage rating", "voltage - rated", "voltage - dc reverse (vr) (max)", "voltage"],
-    "Đặc tính": ["temperature coefficient", "features"],
+    "Đặc tính": ["temperature coefficient", "features", "temp coefficient"],
     "ESR": ["equivalent series resistance"],
     "Dòng điện": ["current rating", "current - average rectified (io)", "current"],
 }
 
-# TOÀN BỘ DANH MỤC ĐIỆN TỬ TỪ PHỤ LỤC 1 (KHÔNG BỎ SÓT BẤT KỲ LINH KIỆN NÀO)
 MASTER_RULES = {
-    # --- NHÓM ĐIỆN TRỞ (RESISTOR) ---
     "RES-SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Công suất", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "RES-DIP": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Công suất", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "RES-VR": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Công suất", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "RES-SPECIAL": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Công suất", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "RES-KITS": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Công suất", "Số lượng", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
-    "RES-ARRAY": {"attrs": ["Giá trị", "Sai số", "Công suất", "Kích thước", "Đặc tính nhiệt", "Điện áp", "ESR", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
-
-    # --- NHÓM TỤ ĐIỆN (CAPACITOR) - CHUẨN DẤU PHẨY TỪ ẢNH ---
+    "RES-ARRAY": {"attrs": ["Giá trị", "Sai số", "Công suất", "Kích thước", "Đặc tính", "Điện áp", "ESR", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "CAP-CER,SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Điện áp", "Đặc tính", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "CAP-TA,SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Điện áp", "ESR", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn", "ESR"]},
     "CAP ALUM,SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Điện áp", "ESR", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn", "ESR"]},
@@ -47,312 +43,141 @@ MASTER_RULES = {
     "CAP-SUPER": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Điện áp", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "CAP-ARRAY": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Điện áp", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "CAP-KITS": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Điện áp", "Số lượng", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
-
-    # --- NHÓM DIODE ---
-    "DIODE-SWITCHING": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "DIODE-SCHOTTKY": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "DIODE-ARRAY": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "DIODE-RECTIFIER": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "DIODE-BRIDGE": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "DIODE-SURGE ABSORBER": {"attrs": ["Điện áp", "Dòng xả", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "DIODE-FAST": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "DIODE-VAR": {"attrs": ["Điện áp", "Điện dung", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "DIODE-ZENER": {"attrs": ["Điện áp", "Công suất", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-
-    # --- NHÓM TRANSISTOR / FET ---
-    "TRANS-BJT": {"attrs": ["Loại", "Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "TRANS-POWER": {"attrs": ["Loại", "Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "TRANS-DIGITAL": {"attrs": ["Loại", "Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "MOS-FET": {"attrs": ["Loại kênh", "Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "TRANS-BJT ARRAY": {"attrs": ["Loại", "Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "TRANS-BJT Pre-Bias": {"attrs": ["Loại", "Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "MOS-FET ARRAY": {"attrs": ["Loại kênh", "Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "RF-FET": {"attrs": ["Loại", "Tần số", "Điện áp", "Công suất", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "TRANS-RF": {"attrs": ["Loại", "Tần số", "Điện áp", "Công suất", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "JFET": {"attrs": ["Loại", "Điện áp", "Công suất", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-
-    # --- NHÓM IC ---
-    "IC": {"attrs": ["Chức năng", "Kích thước", "Dải nhiệt", "Special"], "trunc": ["Special", "Dải nhiệt", "Kích thước"]},
-
-    # --- NHÓM LED & DISPLAY ---
-    "LED-SMD": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Màu sắc"], "trunc": ["Kích thước"]},
-    "LED-DIP": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Màu sắc"], "trunc": ["Kích thước"]},
+    "DIODE-SWITCHING": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "DIODE-SCHOTTKY": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "DIODE-ARRAY": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "DIODE-RECTIFIER": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "DIODE-BRIDGE": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "DIODE-SURGE ABSORBER": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "DIODE-FAST": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "DIODE-VAR": {"attrs": ["Điện áp", "Giá trị", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "DIODE-ZENER": {"attrs": ["Điện áp", "Công suất", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "TRANS-BJT": {"attrs": ["Đặc tính", "Điện áp", "Dòng điện", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "TRANS-POWER": {"attrs": ["Đặc tính", "Điện áp", "Dòng điện", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "TRANS-DIGITAL": {"attrs": ["Đặc tính", "Điện áp", "Dòng điện", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "MOS-FET": {"attrs": ["Đặc tính", "Điện áp", "Dòng điện", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "TRANS-BJT ARRAY": {"attrs": ["Đặc tính", "Điện áp", "Dòng điện", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "TRANS-BJT Pre-Bias": {"attrs": ["Đặc tính", "Điện áp", "Dòng điện", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "MOS-FET ARRAY": {"attrs": ["Đặc tính", "Điện áp", "Dòng điện", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "RF-FET": {"attrs": ["Đặc tính", "Điện áp", "Dòng điện", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "TRANS-RF": {"attrs": ["Đặc tính", "Điện áp", "Dòng điện", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "JFET": {"attrs": ["Đặc tính", "Điện áp", "Dòng điện", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "IC": {"attrs": ["Đặc tính", "Kích thước", "Điện áp"], "trunc": ["Đặc tính", "Kích thước"]},
+    "LED-SMD": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Kích thước"]},
+    "LED-DIP": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Kích thước"]},
     "LED-IR": {"attrs": ["Kích thước"], "trunc": ["Kích thước"]},
-    "LED-MATRIX": {"attrs": ["Cấu hình", "Kích thước", "Màu sắc", "Điện áp", "Kết nối trong"], "trunc": ["Kết nối trong", "Kích thước"]},
-    "LED-7SEG": {"attrs": ["Số digit", "Cỡ chữ", "Điện áp", "Dòng điện", "Kích thước", "Màu sắc"], "trunc": ["Kích thước", "Màu sắc"]},
-
-    # --- NHÓM FILTER, CRYSTAL, OSCILLATOR ---
-    "FILTER-SMD": {"attrs": ["Loại", "Tần số", "Điện dung", "Kích thước", "Điện áp", "Special"], "trunc": ["Kích thước", "Special"]},
-    "FILTER-DIP": {"attrs": ["Loại", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "CRYSTAL": {"attrs": ["Tần số", "Sai số", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "OSCILLATOR": {"attrs": ["Tần số", "Sai số", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-
-    # --- NHÓM CONNECTOR, SWITCH, THERMISTOR ---
-    "CONN-SMD": {"attrs": ["Số chân", "Pitch", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "CONN-DIP": {"attrs": ["Số chân", "Pitch", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "CONN-SPECIAL": {"attrs": ["Đặc tính", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "SWITCH": {"attrs": ["Loại", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "PUSH-BUTTON": {"attrs": ["Loại", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "THERMISTOR": {"attrs": ["Loại", "Giá trị", "Sai số", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-
-    # --- NHÓM INDUCTOR (CUỘN CẢM) ---
-    "IND-SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "DCR", "Dòng điện", "Chuẩn"], "trunc": ["Chuẩn", "Kích thước", "DCR"]},
-    "IND-DIP": {"attrs": ["Giá trị", "Sai số", "Kích thước", "DCR", "Dòng điện", "Chuẩn"], "trunc": ["Chuẩn", "Kích thước", "DCR"]},
-    "IND-VR": {"attrs": ["Giá trị", "Dòng điện", "DCR"], "trunc": ["DCR"]},
-    "IND-ARRAY": {"attrs": ["Giá trị", "Kích thước", "DCR"], "trunc": ["Chuẩn", "Kích thước", "DCR"]},
-    "IND-KITS": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Số lượng"], "trunc": ["Chuẩn", "Số lượng", "Sai số"]},
-
-    # --- NHÓM RELAY, TRANSFORMER, FUSE ---
-    "RELAY": {"attrs": ["Dòng điện cuộn", "Điện áp DC", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "TRANSFORMER": {"attrs": ["Loại", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "FUSE": {"attrs": ["Dòng định mức", "Điện áp", "Kích thước"], "trunc": ["Kích thước"]},
-    "FUSE-CLIP": {"attrs": ["Loại", "Điện áp", "Kích thước", "Dòng định mức"], "trunc": ["Kích thước"]},
-    "FUSE-COVER": {"attrs": ["Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-
-    # --- NHÓM ESD, TVS, FERRITE BEAD ---
-    "ESD": {"attrs": ["Điện dung", "Điện áp làm việc", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "TVS-DIODE": {"attrs": ["Công suất", "Điện áp", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "TVS-HYRIST": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "TVS-VARISTOR": {"attrs": ["Điện áp", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "FB": {"attrs": ["Trở kháng", "Dòng điện", "Kích thước", "DCR"], "trunc": ["Kích thước", "DCR"]},
-
-    # --- NHÓM MODULE, CHOKE, ATTENUATOR, OTHERS ---
-    "MODULE DIP": {"attrs": ["Tên", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "MODULE SMD": {"attrs": ["Tên", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "LCD MODULE": {"attrs": ["Info", "Kích thước"], "trunc": ["Kích thước"]},
-    "MIC MODULE": {"attrs": ["Info", "Kích thước"], "trunc": ["Kích thước"]},
-    "RECEIVER MODULE": {"attrs": ["Info", "Kích thước"], "trunc": ["Kích thước"]},
-    "CAMERA MODULE": {"attrs": ["Info", "Kích thước"], "trunc": ["Kích thước"]},
-    "SPEAKER MODULE": {"attrs": ["Info", "Kích thước"], "trunc": ["Kích thước"]},
-    "CHOKE SMD": {"attrs": ["Trở kháng", "Dòng điện", "DCR", "Kích thước"], "trunc": ["Kích thước", "DCR"]},
-    "CHOKE DIP": {"attrs": ["Trở kháng", "Dòng điện", "Kích thước", "DCR"], "trunc": ["Kích thước", "DCR"]},
-    "ATTENUATOR": {"attrs": ["Spec", "Dòng điện", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
+    "LED-MATRIX": {"attrs": ["Đặc tính", "Kích thước", "Điện áp"], "trunc": ["Kích thước"]},
+    "LED-7SEG": {"attrs": ["Đặc tính", "Kích thước", "Điện áp"], "trunc": ["Kích thước"]},
+    "FILTER-SMD": {"attrs": ["Đặc tính", "Giá trị", "Kích thước", "Điện áp"], "trunc": ["Kích thước", "Đặc tính"]},
+    "FILTER-DIP": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "CRYSTAL": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "OSCILLATOR": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "CONN-SMD": {"attrs": ["Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "CONN-DIP": {"attrs": ["Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "CONN-SPECIAL": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "SWITCH": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "PUSH-BUTTON": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "THERMISTOR": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "IND-SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Dòng điện", "Chuẩn"], "trunc": ["Chuẩn", "Kích thước"]},
+    "IND-DIP": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Dòng điện", "Chuẩn"], "trunc": ["Chuẩn", "Kích thước"]},
+    "IND-VR": {"attrs": ["Giá trị", "Dòng điện", "Kích thước"], "trunc": ["Kích thước"]},
+    "IND-ARRAY": {"attrs": ["Giá trị", "Kích thước", "Dòng điện"], "trunc": ["Kích thước"]},
+    "IND-KITS": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Số lượng"], "trunc": ["Sai số", "Số lượng"]},
+    "RELAY": {"attrs": ["Dòng điện", "Điện áp", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "TRANSFORMER": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "FUSE": {"attrs": ["Dòng điện", "Điện áp", "Kích thước"], "trunc": ["Kích thước"]},
+    "FUSE-CLIP": {"attrs": ["Đặc tính", "Điện áp", "Kích thước"], "trunc": ["Kích thước"]},
+    "FUSE-COVER": {"attrs": ["Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "ESD": {"attrs": ["Giá trị", "Điện áp", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "TVS-DIODE": {"attrs": ["Công suất", "Điện áp", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "TVS-HYRIST": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "TVS-VARISTOR": {"attrs": ["Điện áp", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "FB": {"attrs": ["Giá trị", "Dòng điện", "Kích thước"], "trunc": ["Kích thước"]},
+    "MODULE DIP": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "MODULE SMD": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
+    "LCD MODULE": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "MIC MODULE": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "RECEIVER MODULE": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "CAMERA MODULE": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "SPEAKER MODULE": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "CHOKE SMD": {"attrs": ["Giá trị", "Dòng điện", "Kích thước"], "trunc": ["Kích thước"]},
+    "CHOKE DIP": {"attrs": ["Giá trị", "Dòng điện", "Kích thước"], "trunc": ["Kích thước"]},
+    "ATTENUATOR": {"attrs": ["Đặc tính", "Dòng điện", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
     "THYRISTOR": {"attrs": ["Điện áp", "Dòng điện", "Kích thước"], "trunc": ["Kích thước"]},
-    "THERMOSTAT": {"attrs": ["Nhiệt độ", "Kích thước", "Special"], "trunc": ["Special"]},
-    "FAN": {"attrs": ["Điện áp", "Công suất", "Kích thước", "Special"], "trunc": ["Special", "Kích thước"]},
-    "LED HOLDER": {"attrs": ["Kích thước", "Màu sắc", "Special"], "trunc": ["Special"]},
-    "LAMP": {"attrs": ["Điện áp AC", "Kích thước", "Màu sắc"], "trunc": ["Kích thước"]},
-    "MEMORY CARDS": {"attrs": ["Loại", "Dung lượng", "Special"], "trunc": ["Special"]},
-
-    # --- NHÓM CONTACTOR, BREAKER, CABLE, WIRE ---
-    "CONTACTOR": {"attrs": ["Điện áp", "Dòng điện", "Số cực", "Special"], "trunc": ["Special"]},
-    "AUXILLARY CONTACT": {"attrs": ["Tiếp điểm", "Số cực", "Special"], "trunc": ["Special"]},
-    "MCB": {"attrs": ["Điện áp", "Dòng điện", "Số cực", "Special"], "trunc": ["Special"]},
-    "MCCB": {"attrs": ["Điện áp", "Dòng điện", "Số cực", "Special"], "trunc": ["Special"]},
-    "RCCB": {"attrs": ["Điện áp", "Dòng điện", "Số cực", "Special"], "trunc": ["Special"]},
-    "ELCB": {"attrs": ["Điện áp", "Dòng điện", "Số cực", "Special"], "trunc": ["Special"]},
-    "USB CABLE": {"attrs": ["Số đầu giắc", "Loại giắc", "Chiều dài", "Special"], "trunc": ["Special", "Chiều dài"]},
-    "BUNCHED CABLE": {"attrs": ["Loại giắc", "Chiều dài", "Special"], "trunc": ["Special", "Chiều dài"]},
-    "HIGHT FREQUENCY CABLE": {"attrs": ["Số đầu giắc", "Loại giắc", "Chiều dài", "Special"], "trunc": ["Special", "Chiều dài"]},
-    "CONT CABLE": {"attrs": ["Số đầu giắc", "Chiều dài", "Special"], "trunc": ["Special", "Chiều dài"]},
-    "COAXIAL CABLE": {"attrs": ["Đường kính", "Trở kháng", "Chiều dài", "Special"], "trunc": ["Special", "Chiều dài"]},
-    "CONDUCTOR WIRE": {"attrs": ["Loại", "Kích thước", "Màu sắc", "Special"], "trunc": ["Special"]},
-    "FERRITE": {"attrs": ["Kích thước", "Special"], "trunc": ["Special"]},
-
-    # --- NHÓM NON-STANDARD, PCB, TERMINAL ---
-    "MOTOR": {"attrs": ["Info", "Kích thước"], "trunc": ["Kích thước"]},
-    "WINDOW": {"attrs": ["Info", "Kích thước"], "trunc": ["Kích thước"]},
-    "CHARGER": {"attrs": ["Info", "Kích thước"], "trunc": ["Kích thước"]},
-    "EARPHONE": {"attrs": ["Info", "Kích thước"], "trunc": ["Kích thước"]},
-    "ADAPTER": {"attrs": ["Info", "Kích thước"], "trunc": ["Kích thước"]},
-    "ANTENNA": {"attrs": ["Info", "Kích thước"], "trunc": ["Kích thước"]},
-    "BARE PCB ARRAY": {"attrs": ["Model", "Version"], "trunc": ["Kích thước"]},
-    "SMD FINAL": {"attrs": ["Model", "Version"], "trunc": ["Kích thước"]},
-    "PHA FINAL": {"attrs": ["Model", "Version"], "trunc": ["Kích thước"]},
-    "COMPRESSION TERMINAL": {"attrs": ["Vật liệu", "Model", "Special"], "trunc": ["Special"]},
-    "VINYL INSULATED TERMINAL": {"attrs": ["Loại", "Model", "Màu sắc", "Special"], "trunc": ["Special"]}
+    "THERMOSTAT": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính"]},
+    "FAN": {"attrs": ["Điện áp", "Công suất", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
+    "LED HOLDER": {"attrs": ["Kích thước", "Đặc tính"], "trunc": ["Đặc tính"]},
+    "LAMP": {"attrs": ["Điện áp", "Kích thước", "Đặc tính"], "trunc": ["Kích thước"]},
+    "MEMORY CARDS": {"attrs": ["Đặc tính", "Giá trị"], "trunc": ["Đặc tính"]},
+    "CONTACTOR": {"attrs": ["Điện áp", "Dòng điện", "Đặc tính"], "trunc": ["Đặc tính"]},
+    "AUXILLARY CONTACT": {"attrs": ["Đặc tính", "Số cực"], "trunc": ["Đặc tính"]},
+    "MCB": {"attrs": ["Điện áp", "Dòng điện", "Số cực", "Đặc tính"], "trunc": ["Đặc tính"]},
+    "MCCB": {"attrs": ["Điện áp", "Dòng điện", "Số cực", "Đặc tính"], "trunc": ["Đặc tính"]},
+    "RCCB": {"attrs": ["Điện áp", "Dòng điện", "Số cực", "Đặc tính"], "trunc": ["Đặc tính"]},
+    "ELCB": {"attrs": ["Điện áp", "Dòng điện", "Số cực", "Đặc tính"], "trunc": ["Đặc tính"]},
+    "USB CABLE": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính"]},
+    "BUNCHED CABLE": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính"]},
+    "HIGHT FREQUENCY CABLE": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính"]},
+    "CONT CABLE": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính"]},
+    "COAXIAL CABLE": {"attrs": ["Giá trị", "Đặc tính", "Kích thước"], "trunc": ["Đặc tính"]},
+    "CONDUCTOR WIRE": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính"]},
+    "FERRITE": {"attrs": ["Kích thước", "Đặc tính"], "trunc": ["Đặc tính"]},
+    "MOTOR": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "WINDOW": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "CHARGER": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "EARPHONE": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "ADAPTER": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "ANTENNA": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "BARE PCB ARRAY": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "SMD FINAL": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "PHA FINAL": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Kích thước"]},
+    "COMPRESSION TERMINAL": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính"]},
+    "VINYL INSULATED TERMINAL": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính"]}
 }
 
 # ==========================================
-# 2. CÁC HÀM XỬ LÝ (CORE & API)
+# 2. HÀM XỬ LÝ DIGIKEY API
 # ==========================================
-def get_nexar_token():
-    url = "https://identity.nexar.com/connect/token"
-    payload = {"grant_type": "client_credentials", "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET}
+def get_token():
+    url = "https://api.digikey.com/v1/oauth2/token"
+    payload = {"client_id": CLIENT_ID, "client_secret": CLIENT_SECRET, "grant_type": "client_credentials"}
     try:
-        r = requests.post(url, data=payload, timeout=5)
+        r = requests.post(url, data=payload)
         return r.json().get("access_token")
     except: return None
 
-def normalize_for_fuzzy_match(s):
-    return re.sub(r'[^A-Z0-9]', '', str(s).upper())
-
-def get_api_description(mpn, token, actual_prefix, rule):
-    if not token or pd.isna(mpn) or str(mpn).strip() == "": 
-        return "NO_MPN"
-    
-    url = "https://api.nexar.com/graphql"
-    query = """
-    query Search($mpn: String!) {
-      supSearch(q: $mpn, limit: 1) {
-        results {
-          part {
-            mpn
-            specs {
-              attribute { name }
-              value
-            }
-          }
-        }
-      }
-    }
-    """
+def get_digikey_data(mpn, token):
+    url = f"https://api.digikey.com/products/v4/search/{mpn}/productdetails"
+    headers = {"Authorization": f"Bearer {token}", "X-DIGIKEY-Client-Id": CLIENT_ID}
     try:
-        response = requests.post(
-            url, 
-            headers={"Authorization": f"Bearer {token}"}, 
-            json={"query": query, "variables": {"mpn": mpn}},
-            timeout=10
-        )
-        data = response.json()
-        
-        if "errors" in data:
-            error_msg = data["errors"][0].get("message", "Unknown API Error")
-            return f"API_ERROR: {error_msg}"
-            
-        results = data.get("data", {}).get("supSearch", {}).get("results", [])
-        
-        if not results: 
-            return "NOT_FOUND_ON_NEXAR"
-        
-        part_specs = results[0].get("part", {}).get("specs", [])
-        spec_dict = {spec["attribute"]["name"].lower(): spec["value"] for spec in part_specs}
-        
-        api_values = []
-        for attr in rule["attrs"]:
-            val = ""
-            if attr == "Chuẩn":
-                val = "Auto" if "aec-q200" in str(spec_dict).lower() else ""
-            else:
-                mapped_keys = NEXAR_MAPPING.get(attr, [])
-                for key in mapped_keys:
-                    if key in spec_dict:
-                        val = str(spec_dict[key]).strip().replace(" ", "")
-                        val = val.replace("µ", "u").replace("μ", "u").replace("Ω", "OHM")
-                        break
-            api_values.append(val if val else "N/A")
-            
-        return f"{actual_prefix};" + ",".join(api_values)
-    except Exception as e:
-        return f"CODE_ERROR: {str(e)}"
-
-def get_truncation(prefix, rule, values):
-    master_name = f"{prefix};" + ",".join(values)
-    if len(master_name) <= 40: return master_name, ""
-    
-    data = dict(zip(rule["attrs"], values))
-    history = []
-    for target in rule["trunc"]:
-        if target in data:
-            data.pop(target)
-            history.append(target)
-            new_str = f"{prefix};" + ",".join([str(v) for v in data.values() if v])
-            if len(new_str) <= 40: return new_str, f"(Đã gọt: {','.join(history)})"
-    return master_name[:37] + "...", "(Cảnh báo: Vẫn > 40 ký tự)"
+        r = requests.get(url, headers=headers)
+        return r.json() if r.status_code == 200 else None
+    except: return None
 
 # ==========================================
-# 3. GIAO DIỆN & VÒNG LẶP KIỂM DUYỆT KHẮT KHE
+# 3. GIAO DIỆN STREAMLIT
 # ==========================================
-st.set_page_config(page_title="Check Description", layout="wide")
-st.title("🛠️ Check Description (Strict QC Mode)")
-st.markdown("---")
-
-st.sidebar.header("System Status")
-token = get_nexar_token()
-st.sidebar.metric("API Nexar", "Connected" if token else "Disconnected", delta=None)
-
-uploaded_file = st.file_uploader("📂 Upload file BOM (.xlsx)", type=["xlsx"])
+st.title("🛠️ SMT BOM Checker (DigiKey API)")
+uploaded_file = st.file_uploader("Upload BOM Excel", type=["xlsx"])
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-    
-    # --- TỰ ĐỘNG TÌM TÊN CỘT DỰA TRÊN TỪ KHÓA ---
-    desc_col = None
-    mpn_col = None
-    for col in df.columns:
-        col_str = str(col).lower()
-        if "mô tả" in col_str or "yêu cầu" in col_str:
-            desc_col = col
-        if "mã nsx" in col_str:
-            mpn_col = col
-
-    if st.button("🚀 Chạy kiểm tra & Đối chiếu API"):
-        if not desc_col or not mpn_col:
-            st.error("Không tìm thấy cột 'Mô tả' hoặc 'Mã NSX' trong file Excel của bạn!")
-        else:
-            with st.spinner("Đang kết nối API và đối chiếu dữ liệu..."):
-                results = []
-                for _, row in df.iterrows():
-                    # Lấy dữ liệu theo tên cột đã nhận diện động
-                    desc = str(row[desc_col]).strip() if pd.notna(row[desc_col]) else ""
-                    mpn = str(row[mpn_col]).strip() if pd.notna(row[mpn_col]) else ""
-                    
-                    if ";" not in desc:
-                        results.append({"Status": "🔴 FAIL", "Mô tả API": "-", "Suggest": "-", "Note": "Lỗi format: Thiếu dấu chấm phẩy (;)"})
-                        continue
-                    
-                    raw_user_prefix = desc.split(";", 1)[0]
-                    
-                    actual_prefix = ""
-                    rule = None
-                    for key, r in MASTER_RULES.items():
-                        if normalize_for_fuzzy_match(raw_user_prefix) == normalize_for_fuzzy_match(key):
-                            actual_prefix = key
-                            rule = r
-                            break
-                    
-                    # LOGIC BÁO LỖI GỢI Ý TIỀN TỐ NẾU THIẾU CHI TIẾT
-                    if not rule:
-                        suggestions = [k for k in MASTER_RULES.keys() if normalize_for_fuzzy_match(raw_user_prefix) in normalize_for_fuzzy_match(k)]
-                        if suggestions:
-                            suggest_str = ", ".join(suggestions)
-                            note = f"Sai tiền tố: '{raw_user_prefix}' chưa rõ ràng. Ý bạn là {suggest_str}?"
-                        else:
-                            note = f"Sai tiền tố: '{raw_user_prefix}' không tồn tại trong danh mục chuẩn (Phụ lục 1)"
-                            
-                        results.append({"Status": "🔴 FAIL", "Mô tả API": "-", "Suggest": "-", "Note": note})
-                        continue
-                    
-                    # 3. LẤY MÔ TẢ TỪ API LÀM CHUẨN
-                    api_desc = get_api_description(mpn, token, actual_prefix, rule)
-                    
-                    if api_desc == "NO_MPN":
-                        results.append({"Status": "🔴 FAIL", "Mô tả API": "-", "Suggest": "-", "Note": "Dòng này bị bỏ trống Mã NSX nên không thể tra cứu API"})
-                    elif api_desc == "NOT_FOUND_ON_NEXAR":
-                        results.append({"Status": "🟡 UNVERIFIED", "Mô tả API": "-", "Suggest": "-", "Note": f"Hệ thống Nexar API không có dữ liệu cho mã NSX: {mpn}"})
-                    elif str(api_desc).startswith("API_ERROR:") or str(api_desc).startswith("CODE_ERROR:"):
-                        results.append({"Status": "🔴 FAIL", "Mô tả API": "-", "Suggest": "-", "Note": f"Lỗi hệ thống Nexar: {api_desc}"})
-                    else:
-                        # NẾU API TRẢ VỀ CHUỖI THÀNH CÔNG -> CHẤM ĐIỂM
-                        values_for_trunc = api_desc.split(";", 1)[1].split(",")
-                        suggested, trunc_note = get_truncation(actual_prefix, rule, values_for_trunc)
-                        
-                        if desc == api_desc:
-                            if len(desc) > 40:
-                                status = "🟡 WARNING"
-                                note = f"Mô tả đúng cấu trúc API nhưng vượt 40 ký tự. Vui lòng copy ở cột Suggest. {trunc_note}"
-                            else:
-                                status = "🟢 PASS"
-                                note = "Khớp 100% với dữ liệu hãng"
-                        else:
-                            status = "🔴 FAIL"
-                            if raw_user_prefix != actual_prefix:
-                                note = f"Sai chuẩn Tiền tố (Của bạn: '{raw_user_prefix}' | Chuẩn: '{actual_prefix}')"
-                            elif desc.replace(" ", "") == api_desc.replace(" ", ""):
-                                if desc.upper() == api_desc.upper():
-                                    note = "Lỗi khoảng trắng: Thừa/thiếu dấu cách so với bản chuẩn API"
-                                else:
-                                    note = "Lỗi chữ hoa/chữ thường (Case Sensitivity)"
-                            else:
-                                note = "Thông số mô tả không khớp với thông số thực tế của Mã NSX từ API"
-                                
-                        results.append({"Status": status, "Mô tả API": api_desc, "Suggest": suggested, "Note": note})
-
-                res_df = pd.concat([df, pd.DataFrame(results)], axis=1)
-                st.success("Hoàn tất đối chiếu 100% dữ liệu với API!")
-                st.dataframe(res_df, use_container_width=True)
+    if st.button("🚀 Chạy kiểm tra"):
+        token = get_token()
+        results = []
+        for _, row in df.iterrows():
+            desc = str(row.get('Mô tả/Yêu cầu kỹ thuật', ''))
+            mpn = str(row.get('Mã NSX (Tham khảo)', ''))
+            
+            prefix = desc.split(";")[0] if ";" in desc else ""
+            rule = MASTER_RULES.get(prefix)
+            
+            if not rule:
+                results.append("Sai tiền tố")
+                continue
                 
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    res_df.to_excel(writer, index=False)
-                st.download_button("📥 Tải file báo cáo (.xlsx)", data=output.getvalue(), file_name="BOM_Check_API_Result.xlsx")
+            data = get_digikey_data(mpn, token)
+            results.append("🟢 PASS" if data else "🔴 FAIL API")
+            
+        df["Result"] = results
+        st.dataframe(df)
