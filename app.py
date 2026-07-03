@@ -1,24 +1,25 @@
 import streamlit as st
 import pandas as pd
 import requests
-import io
-import re
 
 # ==========================================
-# 1. CẤU HÌNH & QUY TẮC (MASTER RULES)
+# 1. CẤU HÌNH & MASTER RULES ĐẦY ĐỦ
 # ==========================================
 CLIENT_ID = "b0B8QFDQ7AjTD4JKkAPRtCXLeczroWN0RIstnSMak4H6lIWg"
 CLIENT_SECRET = "NYMdqqKvoshhFoVYYtuMZ2NitAkcMPFiBHkm7pInrlcXR6jJU2lk3HhmXupEKNfx"
 
 NEXAR_MAPPING = {
-    "Giá trị": ["resistance", "capacitance", "inductance", "resistance (ohms)"],
+    "Giá trị": ["resistance", "capacitance", "inductance", "resistance (ohms)", "value"],
     "Sai số": ["tolerance"],
     "Kích thước": ["package / case", "case/package", "case code - mm", "size / dimension", "supplier device package"],
     "Công suất": ["power (watts)", "power rating", "power"],
     "Điện áp": ["voltage rating", "voltage - rated", "voltage - dc reverse (vr) (max)", "voltage"],
-    "Đặc tính": ["temperature coefficient", "features", "temp coefficient"],
+    "Đặc tính": ["temperature coefficient", "features", "temp coefficient", "description"],
     "ESR": ["equivalent series resistance"],
     "Dòng điện": ["current rating", "current - average rectified (io)", "current"],
+    "Số lượng": ["quantity"],
+    "Chuẩn": ["standard"],
+    "Số cực": ["number of positions", "positions"]
 }
 
 MASTER_RULES = {
@@ -136,7 +137,7 @@ MASTER_RULES = {
 }
 
 # ==========================================
-# 2. HÀM XỬ LÝ DIGIKEY API
+# 2. CÁC HÀM XỬ LÝ API & DỮ LIỆU
 # ==========================================
 def get_token():
     url = "https://api.digikey.com/v1/oauth2/token"
@@ -154,10 +155,33 @@ def get_digikey_data(mpn, token):
         return r.json() if r.status_code == 200 else None
     except: return None
 
+def extract_and_format(data, prefix):
+    if not data or "ProductParameters" not in data: return None
+    params = data.get("ProductParameters", [])
+    spec_dict = {p.get("Parameter", "").lower(): p.get("Value", "").replace(",", "") for p in params}
+    
+    rule = MASTER_RULES.get(prefix)
+    if not rule: return None
+    
+    values = []
+    for attr in rule["attrs"]:
+        found = "N/A"
+        for key in NEXAR_MAPPING.get(attr, []):
+            if key in spec_dict:
+                found = spec_dict[key]
+                break
+        values.append(found)
+    
+    desc = f"{prefix};" + ",".join(values)
+    # Logic gọt chữ (nếu quá 40 ký tự thì gọt)
+    if len(desc) > 40:
+        desc = desc[:37] + "..."
+    return desc
+
 # ==========================================
-# 3. GIAO DIỆN STREAMLIT
+# 3. GIAO DIỆN CHÍNH
 # ==========================================
-st.title("🛠️ Check Description (DigiKey API)")
+st.title("🛠️ SMT BOM Checker (DigiKey API)")
 uploaded_file = st.file_uploader("Upload BOM Excel", type=["xlsx"])
 
 if uploaded_file:
@@ -166,18 +190,16 @@ if uploaded_file:
         token = get_token()
         results = []
         for _, row in df.iterrows():
-            desc = str(row.get('Mô tả/Yêu cầu kỹ thuật', ''))
+            desc_engineer = str(row.get('Mô tả/Yêu cầu kỹ thuật', ''))
             mpn = str(row.get('Mã NSX (Tham khảo)', ''))
+            prefix = desc_engineer.split(";")[0] if ";" in desc_engineer else ""
             
-            prefix = desc.split(";")[0] if ";" in desc else ""
-            rule = MASTER_RULES.get(prefix)
-            
-            if not rule:
-                results.append("Sai tiền tố")
-                continue
-                
             data = get_digikey_data(mpn, token)
-            results.append("🟢 PASS" if data else "🔴 FAIL API")
-            
+            if data:
+                standard_desc = extract_and_format(data, prefix)
+                results.append("🟢 PASS" if standard_desc == desc_engineer else f"🔴 FAIL (Chuẩn: {standard_desc})")
+            else:
+                results.append("🟠 CHECK MANUALLY")
+        
         df["Result"] = results
         st.dataframe(df)
