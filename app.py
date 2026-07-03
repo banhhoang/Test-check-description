@@ -6,8 +6,8 @@ import io
 # ==========================================
 # 1. CẤU HÌNH & THƯ VIỆN MASTER RULES
 # ==========================================
-CLIENT_ID = "b0B8QFDQ7AjTD4JKkAPRtCXLeczroWN0RIstnSMak4H6lIWg"
-CLIENT_SECRET = "NYMdqqKvoshhFoVYYtuMZ2NitAkcMPFiBHkm7pInrlcXR6jJU2lk3HhmXupEKNfx"
+CLIENT_ID = "GhisD3uPdgME76XnklG6L28VGe1ZBKdJxb1RfFs4VV5b3Kod"
+CLIENT_SECRET = "dndU2Pad5yGcCIFw1uT7vwUhZOq55pSMGBYbQkYLfSHJi7fEaF3yP5ZzGPvi0XKa"
 
 NEXAR_MAPPING = {
     "Giá trị": ["resistance", "capacitance", "inductance", "resistance (ohms)", "value"],
