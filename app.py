@@ -186,7 +186,7 @@ def get_suggestion(desc, prefix):
 # ==========================================
 # 3. GIAO DIỆN STREAMLIT & XUẤT FILE
 # ==========================================
-st.title("🛠️ SMT BOM Checker (DigiKey API)")
+st.title("🛠️ Check Description (DigiKey API)")
 uploaded_file = st.file_uploader("Upload BOM Excel", type=["xlsx"])
 
 if uploaded_file:
