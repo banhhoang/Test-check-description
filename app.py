@@ -24,31 +24,36 @@ def debug_digikey_part(mpn, token):
         "Content-Type": "application/json"
     }
     
-    # 1. Tìm kiếm Part Number
     search_url = "https://api.digikey.com/products/v4/search/keyword"
-    try:
-        r = requests.post(search_url, headers=headers, data=json.dumps({"Keywords": mpn}))
-        if r.status_code != 200: return f"Lỗi tìm kiếm: {r.status_code}"
-        
-        data = r.json()
-        if not data.get("ExactMatches") and not data.get("Products"): return "Không tìm thấy linh kiện"
-        
-        dk_part = data["ExactMatches"][0]["DigiKeyProductNumber"] if data.get("ExactMatches") else data["Products"][0]["DigiKeyProductNumber"]
-        
-        # 2. Lấy chi tiết
-        detail_url = f"https://api.digikey.com/products/v4/search/{dk_part}/productdetails"
-        r2 = requests.get(detail_url, headers=headers)
-        if r2.status_code != 200: return f"Lỗi lấy thông tin: {r2.status_code}"
-        
-        return r2.json()
-    except Exception as e:
-        return f"Lỗi hệ thống: {str(e)}"
+    
+    # Thử lại tối đa 3 lần nếu gặp lỗi 429
+    for attempt in range(3):
+        try:
+            r = requests.post(search_url, headers=headers, data=json.dumps({"Keywords": mpn}))
+            
+            if r.status_code == 429:
+                st.warning(f"Bị chặn (429). Đang chờ 5s để thử lại lần {attempt+1}...")
+                time.sleep(5)
+                continue
+            
+            if r.status_code != 200: return f"Lỗi tìm kiếm: {r.status_code}"
+            
+            data = r.json()
+            if not data.get("ExactMatches") and not data.get("Products"): return "Không tìm thấy"
+            
+            dk_part = data["ExactMatches"][0]["DigiKeyProductNumber"] if data.get("ExactMatches") else data["Products"][0]["DigiKeyProductNumber"]
+            
+            detail_url = f"https://api.digikey.com/products/v4/search/{dk_part}/productdetails"
+            r2 = requests.get(detail_url, headers=headers)
+            return r2.json() if r2.status_code == 200 else f"Lỗi lấy thông tin: {r2.status_code}"
+            
+        except Exception as e:
+            return f"Lỗi hệ thống: {str(e)}"
+    return "Lỗi: Quá nhiều yêu cầu, thử lại sau."
 
 # GIAO DIỆN
-st.title("🔍 DigiKey Batch Debugger")
-st.write("Nhập mã linh kiện (mỗi mã 1 dòng) để xem cấu trúc dữ liệu trả về từ DigiKey.")
-
-input_text = st.text_area("Danh sách Mã NSX:", height=200)
+st.title("🔍 DigiKey Batch Debugger (Fix 429)")
+input_text = st.text_area("Nhập danh sách Mã NSX (mỗi mã 1 dòng):", height=200)
 
 if st.button("🚀 Lấy dữ liệu"):
     mpn_list = [line.strip() for line in input_text.split('\n') if line.strip()]
@@ -57,38 +62,24 @@ if st.button("🚀 Lấy dữ liệu"):
     if not mpn_list: 
         st.warning("Vui lòng nhập mã!")
     elif not token: 
-        st.error("Lỗi xác thực Token! Vui lòng kiểm tra lại Client ID/Secret.")
+        st.error("Lỗi xác thực Token!")
     else:
-        progress = st.progress(0)
-        for i, mpn in enumerate(mpn_list):
-            st.write(f"---")
+        for mpn in mpn_list:
             st.write(f"### Đang xử lý: {mpn}")
-            
-            # Đợi 1.5 giây để tránh bị chặn 429
-            time.sleep(1.5) 
-            
             result = debug_digikey_part(mpn, token)
             
-            # Kiểm tra kết quả
             if isinstance(result, str):
-                st.error(f"Lỗi: {result}")
+                st.error(f"Kết quả: {result}")
             elif result is None:
                 st.error(f"Không tìm thấy dữ liệu cho: {mpn}")
             else:
-                with st.expander(f"Xem dữ liệu chi tiết: {mpn}"):
-                    product_data = result.get("Product", {})
-                    params = product_data.get("Parameters", [])
-                    
+                with st.expander(f"Dữ liệu thô: {mpn}"):
+                    params = result.get("Product", {}).get("Parameters", [])
                     if params:
-                        # Hiển thị bảng thông số
-                        debug_data = [{"ParameterName": p.get("ParameterText"), "Value": p.get("ValueText")} for p in params]
-                        st.table(pd.DataFrame(debug_data))
-                        
-                        # Hiển thị JSON thô để copy
-                        st.text("Dữ liệu thô (Copy phần này gửi cho tôi):")
+                        st.table(pd.DataFrame([{"Parameter": p.get("ParameterText"), "Value": p.get("ValueText")} for p in params]))
                         st.json(params)
                     else:
-                        st.warning("Tìm thấy linh kiện nhưng không có thông số (Parameters).")
+                        st.warning("Không có thông số (Parameters).")
             
-            progress.progress((i + 1) / len(mpn_list))
-        st.success("Đã hoàn tất kiểm tra!")
+            time.sleep(2) # Nghỉ 2s giữa các mã sau khi xử lý xong
+        st.success("Đã hoàn tất!")
