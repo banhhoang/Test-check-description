@@ -186,8 +186,6 @@ def get_suggestion(desc, prefix):
 # 3. GIAO DIỆN STREAMLIT & XUẤT FILE
 # ==========================================
 st.title("🛠️ Check Description (DigiKey API)")
-uploaded_file = st.file_uploader("Upload BOM Excel", type=["xlsx"])
-
 # --- PHẦN BÁO TRẠNG THÁI KẾT NỐI ---
 st.subheader("Trạng thái hệ thống")
 status_col1, status_col2 = st.columns([1, 4])
@@ -207,6 +205,8 @@ if st.button("🔄 Kiểm tra kết nối DigiKey"):
             st.success("Kết nối thành công tới máy chủ DigiKey!")
         else:
             st.error("Kết nối thất bại. Kiểm tra lại Client ID và Secret!")
+
+uploaded_file = st.file_uploader("Upload BOM Excel", type=["xlsx"])
 
 
 if uploaded_file:
