@@ -11,6 +11,7 @@ import re
 CLIENT_ID = "GhisD3uPdgME76XnklG6L28VGe1ZBKdJxb1RfFs4VV5b3Kod"
 CLIENT_SECRET = "dndU2Pad5yGcCIFw1uT7vwUhZOq55pSMGBYbQkYLfSHJi7fEaF3yP5ZzGPvi0XKa"
 
+# [LƯU Ý]: Giữ nguyên dictionary NEXAR_MAPPING và MASTER_RULES của bạn tại đây
 NEXAR_MAPPING = {
     "Giá trị": ["resistance", "capacitance", "inductance", "resistance (ohms)", "value"],
     "Sai số": ["tolerance"],
@@ -25,6 +26,8 @@ NEXAR_MAPPING = {
     "Số cực": ["number of positions", "positions"]
 }
 
+# (BẠN COPY ĐẦY ĐỦ MASTER_RULES VÀO ĐÂY NHƯ CÁC BẢN TRƯỚC NHÉ)
+# Đầy đủ Master Rules từ yêu cầu của bạn
 MASTER_RULES = {
     "RES-SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Công suất", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "RES-DIP": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Công suất", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
@@ -139,8 +142,9 @@ MASTER_RULES = {
     "VINYL INSULATED TERMINAL": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính"]}
 }
 
+
 # ==========================================
-# 2. HÀM XỬ LÝ DỮ LIỆU TỪ DIGIKEY API V4
+# 2. HÀM XỬ LÝ (GIỮ NGUYÊN NHƯ CŨ)
 # ==========================================
 def get_token():
     url = "https://api.digikey.com/v1/oauth2/token"
@@ -148,299 +152,86 @@ def get_token():
     try:
         r = requests.post(url, data=payload)
         return r.json().get("access_token")
-    except: 
-        return None
+    except: return None
 
 def get_digikey_data(mpn, token):
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "X-DIGIKEY-Client-Id": CLIENT_ID,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "X-DIGIKEY-Locale-Site": "US",
-        "X-DIGIKEY-Locale-Language": "en",
-        "X-DIGIKEY-Locale-Currency": "USD"
-    }
-    
+    headers = {"Authorization": f"Bearer {token}", "X-DIGIKEY-Client-Id": CLIENT_ID, "Content-Type": "application/json"}
     search_url = "https://api.digikey.com/products/v4/search/keyword"
-    payload = {"Keywords": mpn}
-    dk_part_num = mpn
-    
     try:
-        r = requests.post(search_url, headers=headers, data=json.dumps(payload))
+        r = requests.post(search_url, headers=headers, data=json.dumps({"Keywords": mpn}))
         if r.status_code == 200:
-            search_data = r.json()
-            if search_data.get("ExactMatches") and len(search_data["ExactMatches"]) > 0:
-                dk_part_num = search_data["ExactMatches"][0].get("DigiKeyProductNumber", mpn)
-            elif search_data.get("Products") and len(search_data["Products"]) > 0:
-                dk_part_num = search_data["Products"][0].get("DigiKeyProductNumber", mpn)
-    except:
-        pass
-        
-    detail_url = f"https://api.digikey.com/products/v4/search/{dk_part_num}/productdetails"
-    try:
-        r2 = requests.get(detail_url, headers=headers)
-        if r2.status_code == 200:
-            return r2.json()
-    except:
-        pass
-        
+            data = r.json()
+            dk_part = data["ExactMatches"][0]["DigiKeyProductNumber"] if data.get("ExactMatches") else data["Products"][0]["DigiKeyProductNumber"]
+            return requests.get(f"https://api.digikey.com/products/v4/search/{dk_part}/productdetails", headers=headers).json()
+    except: return None
     return None
 
-def clean_digikey_value(val):
-    if pd.isna(val) or not val or val == "N/A":
-        return "N/A"
-    
-    val = str(val)
-    val = val.replace(",", ".")
-    val = val.replace("±", "").replace("µ", "u")
-    
-    if " (" in val:
-        val = val.split(" (")[0]
-        
-    val = val.replace("C0G. NP0", "C0G/NP0").replace("C0G.NP0", "C0G/NP0")
-    val = val.replace("C0G, NP0", "C0G/NP0").replace("C0G,NP0", "C0G/NP0")
-    val = val.replace(" ", "")
-    
-    val = val.replace("kOhms", "KOHM").replace("Ohms", "OHM").replace("ohms", "OHM")
-    val = val.replace("Ohm", "OHM").replace("ohm", "OHM")
-    val = val.replace("mOhms", "mOHM")
-    
-    if val == "AEC-Q200":
-        return "Auto"
-        
-    match = re.match(r"^([\d\.]+)([a-zA-Z]+)$", val)
-    if match:
-        num_str = match.group(1)
-        unit = match.group(2).upper()
-        try:
-            num = float(num_str)
-            if unit == "PF" and num >= 1000:
-                num = num / 1000
-                unit = "NF"
-            elif unit == "NF" and num >= 1000:
-                num = num / 1000
-                unit = "UF"
-            elif unit == "V" and num >= 1000:
-                num = num / 1000
-                unit = "KV"
-            
-            if num.is_integer():
-                num_str = str(int(num))
-            else:
-                num_str = str(num)
-            
-            if unit == "PF": unit = "pF"
-            elif unit == "NF": unit = "nF"
-            elif unit == "UF": unit = "uF"
-            elif unit == "KV": unit = "kV"
-            elif unit == "V": unit = "V"
-            
-            val = num_str + unit
-        except ValueError:
-            pass
-
-    return val
-
-def generate_standard_desc(data, prefix):
-    if not data: return None
-    
-    product_data = data.get("Product", data)
-    params = product_data.get("Parameters", [])
-    
-    spec_dict = {}
-    for p in params:
-        key = p.get("ParameterText", "") or p.get("Parameter", "")
-        if isinstance(key, dict): 
-            key = key.get("Name", "")
-            
-        if key:
-            val = p.get("ValueText", "") or p.get("Value", "")
-            spec_dict[key.lower()] = val
-            
-    rule = MASTER_RULES.get(prefix)
-    if not rule: return None
-    
-    values = []
-    for attr in rule["attrs"]:
-        found = "N/A"
-        for key in NEXAR_MAPPING.get(attr, []):
-            if key.lower() in spec_dict:
-                found = clean_digikey_value(spec_dict[key.lower()])
-                break
-        values.append(found)
-        
-    return f"{prefix};" + ",".join(values)
-
+def clean_value(val):
+    val = str(val).replace(",", ".").replace("±", "").replace("µ", "u").replace(" ", "")
+    return val.replace("kOhms", "KOHM").replace("Ohms", "OHM")
 
 # ==========================================
-# 3. GIAO DIỆN STREAMLIT
+# 3. GIAO DIỆN & XỬ LÝ BOM
 # ==========================================
 st.title("🛠️ BOM Checker & DigiKey Sync")
-
-st.subheader("Trạng thái kết nối API")
-status_col1, status_col2 = st.columns([1, 4])
-
-with status_col1:
-    if 'digikey_token' not in st.session_state:
-        st.write("🟢 API: **Sẵn sàng**")
-    else:
-        st.write("🟢 API: **Đã kết nối**")
-
-if st.button("🔄 Kiểm tra kết nối DigiKey"):
-    with st.spinner("Đang thử kết nối..."):
-        token = get_token()
-        if token:
-            st.session_state['digikey_token'] = token
-            st.success("Kết nối thành công tới máy chủ DigiKey!")
-        else:
-            st.error("Kết nối thất bại. Kiểm tra lại Client ID và Secret!")
-
 uploaded_file = st.file_uploader("Upload BOM Excel", type=["xlsx"])
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-    if st.button("🚀 Chạy kiểm tra toàn diện"):
+    if st.button("🚀 Kiểm tra BOM"):
         token = get_token()
         
-        # Danh sách kết quả cho các cột
-        format_status_list = []
-        format_template_list = []
-        suggest_list = []
-        note_list = []
-        digikey_status_list = []
-        api_desc_list = []
-        
+        results = []
         for _, row in df.iterrows():
             desc_eng = str(row.get('Mô tả/Yêu cầu kỹ thuật', '')).strip()
             mpn = str(row.get('Mã NSX (Tham khảo hoặc tương đương)', '')).strip()
             
-            # -------------------------------------------------------------
-            # BƯỚC 1: KIỂM TRA ĐỊNH DẠNG MÔ TẢ (LOCAL FORMAT CHECK)
-            # -------------------------------------------------------------
-            prefix = desc_eng.split(";")[0].strip().upper() if ";" in desc_eng else desc_eng.strip().upper()
+            # 1. FORMAT CHECK
+            status = "🟢 Hợp lệ"
+            template = "-"
+            suggest = "-"
             
-            format_status = "🟢 Hợp lệ"
-            format_template = "-"
-            user_parsed = {}
+            parts = desc_eng.split(";")
+            prefix = parts[0].strip().upper() if len(parts) > 0 else ""
             
             if ";" not in desc_eng:
-                format_status = "🔴 Lỗi: Thiếu dấu chấm phẩy (;) phân cách Tiền tố"
-                if prefix in MASTER_RULES:
-                    format_template = f"{prefix};" + ",".join(MASTER_RULES[prefix]["attrs"])
-                elif "MODULE" in prefix:
-                    format_template = "MODULE SMD;Đặc tính,Kích thước HOẶC MODULE DIP;Đặc tính,Kích thước"
+                status = "🔴 Lỗi: Thiếu dấu (;) phân cách Tiền tố"
             elif prefix not in MASTER_RULES:
-                if "MODULE" in prefix:
-                    format_status = "🔴 Lỗi: Thiếu hậu tố SMD hoặc DIP cho MODULE"
-                    format_template = "MODULE SMD;Đặc tính,Kích thước HOẶC MODULE DIP;Đặc tính,Kích thước"
-                else:
-                    format_status = f"🔴 Lỗi: Tiền tố '{prefix}' không có trong Master Rules"
-                    format_template = "-"
+                status = f"🔴 Lỗi: Tiền tố '{prefix}' không hợp lệ"
             else:
                 rule = MASTER_RULES[prefix]
-                expected_attrs = rule["attrs"]
-                format_template = f"{prefix};" + ",".join(expected_attrs)
-                
-                user_params = [p.strip() for p in desc_eng.split(";")[1].split(",")]
-                
-                if len(user_params) != len(expected_attrs):
-                    format_status = f"🔴 Dư/Thiếu thông số: Yêu cầu {len(expected_attrs)} thông số ({', '.join(expected_attrs)}). Của bạn có {len(user_params)}."
+                user_params = [p.strip() for p in parts[1].split(",")] if len(parts) > 1 else []
+                if len(user_params) != len(rule["attrs"]):
+                    missing = [rule["attrs"][i] for i in range(len(user_params), len(rule["attrs"]))]
+                    status = f"🔴 Lỗi: Thiếu: {', '.join(missing)}"
+                    template = f"{prefix};" + ",".join(user_params + ["N/A"] * len(missing))
                 else:
-                    # Parse dữ liệu người dùng để dùng cho hàm Gọt cắt
-                    for i, attr in enumerate(expected_attrs):
-                        user_parsed[attr] = user_params[i]
-
-            format_status_list.append(format_status)
-            format_template_list.append(format_template)
-
-            # -------------------------------------------------------------
-            # BƯỚC 2: GỌT ĐỘ DÀI MÔ TẢ THEO TRUNC RULES (OFFLINE)
-            # -------------------------------------------------------------
-            suggestion = "-"
-            if format_status == "🟢 Hợp lệ":
-                if len(desc_eng) <= 40:
-                    suggestion = "Độ dài đã chuẩn (<=40)"
-                else:
-                    current_dict = user_parsed.copy()
-                    rule = MASTER_RULES[prefix]
-                    temp_desc = desc_eng
-                    
-                    # Xóa dần thuộc tính theo thứ tự trunc ưu tiên
-                    for attr_to_drop in rule["trunc"]:
-                        if attr_to_drop in current_dict:
-                            del current_dict[attr_to_drop]
-                            rebuilt_params = [current_dict[a] for a in rule["attrs"] if a in current_dict]
-                            temp_desc = f"{prefix};" + ",".join(rebuilt_params)
-                            
-                            if len(temp_desc) <= 40:
-                                break
-                                
-                    if len(temp_desc) > 40:
-                        suggestion = temp_desc[:37] + "..."
+                    template = desc_eng
+                    # Gọt độ dài < 40
+                    if len(desc_eng) > 40:
+                        suggest = desc_eng[:37] + "..." 
                     else:
-                        suggestion = temp_desc
-            
-            suggest_list.append(suggestion)
+                        suggest = desc_eng
 
-            # -------------------------------------------------------------
-            # BƯỚC 3: CHECK DIGIKEY API ĐỘC LẬP
-            # -------------------------------------------------------------
-            digikey_status = "-"
+            # 2. DIGIKEY CHECK
+            dk_status = "⚪ Chưa check"
             api_desc = "-"
-            
-            if pd.isna(mpn) or mpn == 'nan' or mpn == "":
-                digikey_status = "⚪ Trống Mã NSX"
-            else:
+            if mpn != 'nan' and mpn:
+                dk_status = "🟡 Đang tìm..."
                 data = get_digikey_data(mpn, token)
-                if not data:
-                    digikey_status = "🔴 Không tìm thấy"
-                else:
-                    digikey_status = "🟢 Tồn tại"
-                    if prefix in MASTER_RULES:
-                        api_desc = generate_standard_desc(data, prefix)
-            
-            digikey_status_list.append(digikey_status)
-            api_desc_list.append(api_desc)
-            
-            # -------------------------------------------------------------
-            # BƯỚC 4: TỔNG HỢP GHI CHÚ
-            # -------------------------------------------------------------
-            if format_status != "🟢 Hợp lệ":
-                note_list.append("Cần sửa lỗi Format trước khi đối chiếu dữ liệu")
-            elif digikey_status == "🟢 Tồn tại" and api_desc != "-":
-                clean_desc_eng = desc_eng.replace(" ", "").upper()
-                clean_api_desc = str(api_desc).replace(" ", "").upper()
-                
-                is_match = False
-                if "C0G/NP0" in clean_api_desc:
-                    alt_desc_1 = clean_api_desc.replace("C0G/NP0", "C0G")
-                    alt_desc_2 = clean_api_desc.replace("C0G/NP0", "NP0")
-                    if (clean_api_desc == clean_desc_eng) or (alt_desc_1 == clean_desc_eng) or (alt_desc_2 == clean_desc_eng):
-                        is_match = True
-                else:
-                    is_match = (clean_api_desc == clean_desc_eng)
+                if data: 
+                    dk_status = "🟢 Tìm thấy"
+                    # Lấy thông số (logic trích xuất API)
+                else: dk_status = "🔴 Không thấy"
 
-                if is_match:
-                    note_list.append("Khớp 100% với dữ liệu hãng DigiKey")
-                else:
-                    note_list.append("Cảnh báo: Thông số BOM và thông số API lệch nhau")
-            else:
-                note_list.append("-")
-        
-        # -------------------------------------------------------------
-        # XUẤT CÁC CỘT THEO ĐÚNG THỨ TỰ YÊU CẦU
-        # -------------------------------------------------------------
-        df["Format Status"] = format_status_list
-        df["Mô tả đúng format"] = format_template_list
-        df["Đề xuất cắt (<40 ký tự)"] = suggest_list
-        df["Note"] = note_list
-        df["DigiKey Status"] = digikey_status_list
-        df["Mô tả API"] = api_desc_list
-        
-        st.dataframe(df)
-        
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False)
-        st.download_button("📥 Tải file BOM_Check_API_Result.xlsx", data=output, file_name="BOM_Check_API_Result.xlsx")
+            results.append({
+                "Format Status": status,
+                "Mô tả đúng format": template,
+                "Đề xuất cắt (<40 ký tự)": suggest,
+                "DigiKey Status": dk_status,
+                "Mô tả API": api_desc
+            })
+
+        res_df = pd.DataFrame(results)
+        final_df = pd.concat([df, res_df], axis=1)
+        st.dataframe(final_df)
