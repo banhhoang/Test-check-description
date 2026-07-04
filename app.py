@@ -272,10 +272,11 @@ def generate_standard_desc(data, prefix):
         
     return f"{prefix};" + ",".join(values)
 
+
 # ==========================================
 # 3. GIAO DIỆN STREAMLIT
 # ==========================================
-st.title("🛠️ Check Description & DigiKey API")
+st.title("🛠️ BOM Checker & DigiKey Sync")
 
 st.subheader("Trạng thái kết nối API")
 status_col1, status_col2 = st.columns([1, 4])
@@ -302,76 +303,79 @@ if uploaded_file:
     if st.button("🚀 Chạy kiểm tra toàn diện"):
         token = get_token()
         
-        # Tạo danh sách chứa kết quả cho các cột mới
+        # Danh sách kết quả cho các cột
         format_status_list = []
-        digikey_status_list = []
-        api_desc_list = []
+        format_template_list = []
         suggest_list = []
         note_list = []
+        digikey_status_list = []
+        api_desc_list = []
         
         for _, row in df.iterrows():
             desc_eng = str(row.get('Mô tả/Yêu cầu kỹ thuật', '')).strip()
             mpn = str(row.get('Mã NSX (Tham khảo hoặc tương đương)', '')).strip()
             
             # -------------------------------------------------------------
-            # BƯỚC 1: KIỂM TRA ĐỊNH DẠNG MÔ TẢ (LOCAL - KHÔNG DÙNG API)
+            # BƯỚC 1: KIỂM TRA ĐỊNH DẠNG MÔ TẢ (LOCAL FORMAT CHECK)
             # -------------------------------------------------------------
+            prefix = desc_eng.split(";")[0].strip().upper() if ";" in desc_eng else desc_eng.strip().upper()
+            
             format_status = "🟢 Hợp lệ"
-            format_note = ""
+            format_template = "-"
             user_parsed = {}
-            prefix = ""
             
             if ";" not in desc_eng:
-                format_status = "🔴 Sai cấu trúc"
-                format_note = "Thiếu dấu chấm phẩy (;) phân cách Tiền tố"
-            else:
-                parts = desc_eng.split(";")
-                prefix = parts[0].strip().upper()
-                params_str = parts[1]
-                
-                if prefix not in MASTER_RULES:
-                    format_status = "🔴 Sai Tiền tố"
-                    format_note = f"Tiền tố '{prefix}' không tồn tại trong Rules"
+                format_status = "🔴 Lỗi: Thiếu dấu chấm phẩy (;) phân cách Tiền tố"
+                if prefix in MASTER_RULES:
+                    format_template = f"{prefix};" + ",".join(MASTER_RULES[prefix]["attrs"])
+                elif "MODULE" in prefix:
+                    format_template = "MODULE SMD;Đặc tính,Kích thước HOẶC MODULE DIP;Đặc tính,Kích thước"
+            elif prefix not in MASTER_RULES:
+                if "MODULE" in prefix:
+                    format_status = "🔴 Lỗi: Thiếu hậu tố SMD hoặc DIP cho MODULE"
+                    format_template = "MODULE SMD;Đặc tính,Kích thước HOẶC MODULE DIP;Đặc tính,Kích thước"
                 else:
-                    rule = MASTER_RULES[prefix]
-                    expected_attrs = rule["attrs"]
-                    user_params = [p.strip() for p in params_str.split(",")]
-                    
-                    if len(user_params) != len(expected_attrs):
-                        format_status = "🔴 Dư/Thiếu thông số"
-                        format_note = f"Yêu cầu {len(expected_attrs)} thông số ({', '.join(expected_attrs)}). Của bạn có {len(user_params)}."
-                    else:
-                        # Map thông số của user thành Dict để dành cho bước Gọt độ dài
-                        for i, attr in enumerate(expected_attrs):
-                            user_parsed[attr] = user_params[i]
-                            
+                    format_status = f"🔴 Lỗi: Tiền tố '{prefix}' không có trong Master Rules"
+                    format_template = "-"
+            else:
+                rule = MASTER_RULES[prefix]
+                expected_attrs = rule["attrs"]
+                format_template = f"{prefix};" + ",".join(expected_attrs)
+                
+                user_params = [p.strip() for p in desc_eng.split(";")[1].split(",")]
+                
+                if len(user_params) != len(expected_attrs):
+                    format_status = f"🔴 Dư/Thiếu thông số: Yêu cầu {len(expected_attrs)} thông số ({', '.join(expected_attrs)}). Của bạn có {len(user_params)}."
+                else:
+                    # Parse dữ liệu người dùng để dùng cho hàm Gọt cắt
+                    for i, attr in enumerate(expected_attrs):
+                        user_parsed[attr] = user_params[i]
+
             format_status_list.append(format_status)
+            format_template_list.append(format_template)
 
             # -------------------------------------------------------------
-            # BƯỚC 2: GỌT ĐỘ DÀI MÔ TẢ THEO TRUNC RULES (DÙNG DỮ LIỆU CỦA BẠN)
+            # BƯỚC 2: GỌT ĐỘ DÀI MÔ TẢ THEO TRUNC RULES (OFFLINE)
             # -------------------------------------------------------------
             suggestion = "-"
             if format_status == "🟢 Hợp lệ":
                 if len(desc_eng) <= 40:
-                    suggestion = desc_eng
+                    suggestion = "Độ dài đã chuẩn (<=40)"
                 else:
                     current_dict = user_parsed.copy()
                     rule = MASTER_RULES[prefix]
                     temp_desc = desc_eng
                     
-                    # Lần lượt xóa từng thuộc tính nằm trong danh sách trunc
+                    # Xóa dần thuộc tính theo thứ tự trunc ưu tiên
                     for attr_to_drop in rule["trunc"]:
                         if attr_to_drop in current_dict:
                             del current_dict[attr_to_drop]
-                            # Xếp lại chuỗi mô tả sau khi xóa
                             rebuilt_params = [current_dict[a] for a in rule["attrs"] if a in current_dict]
                             temp_desc = f"{prefix};" + ",".join(rebuilt_params)
                             
-                            # Nếu độ dài đã đạt chuẩn <= 40 thì dừng thuật toán
                             if len(temp_desc) <= 40:
                                 break
                                 
-                    # Nếu xóa hết list trunc mà vẫn > 40 thì đặt dấu ...
                     if len(temp_desc) > 40:
                         suggestion = temp_desc[:37] + "..."
                     else:
@@ -395,8 +399,6 @@ if uploaded_file:
                     digikey_status = "🟢 Tồn tại"
                     if prefix in MASTER_RULES:
                         api_desc = generate_standard_desc(data, prefix)
-                    else:
-                        api_desc = "Lỗi Tiền tố (Không thể render format)"
             
             digikey_status_list.append(digikey_status)
             api_desc_list.append(api_desc)
@@ -405,9 +407,8 @@ if uploaded_file:
             # BƯỚC 4: TỔNG HỢP GHI CHÚ
             # -------------------------------------------------------------
             if format_status != "🟢 Hợp lệ":
-                note_list.append(format_note)
-            elif digikey_status == "🟢 Tồn tại" and "Lỗi Tiền tố" not in api_desc:
-                # Đối chiếu dữ liệu của bạn và API
+                note_list.append("Cần sửa lỗi Format trước khi đối chiếu dữ liệu")
+            elif digikey_status == "🟢 Tồn tại" and api_desc != "-":
                 clean_desc_eng = desc_eng.replace(" ", "").upper()
                 clean_api_desc = str(api_desc).replace(" ", "").upper()
                 
@@ -425,14 +426,17 @@ if uploaded_file:
                 else:
                     note_list.append("Cảnh báo: Thông số BOM và thông số API lệch nhau")
             else:
-                note_list.append("Chưa có đủ dữ liệu DigiKey để đối chiếu")
+                note_list.append("-")
         
-        # Add Columns to DataFrame
+        # -------------------------------------------------------------
+        # XUẤT CÁC CỘT THEO ĐÚNG THỨ TỰ YÊU CẦU
+        # -------------------------------------------------------------
         df["Format Status"] = format_status_list
+        df["Mô tả đúng format"] = format_template_list
+        df["Đề xuất cắt (<40 ký tự)"] = suggest_list
+        df["Note"] = note_list
         df["DigiKey Status"] = digikey_status_list
         df["Mô tả API"] = api_desc_list
-        df["Suggest (<40 ký tự)"] = suggest_list
-        df["Note"] = note_list
         
         st.dataframe(df)
         
