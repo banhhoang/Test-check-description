@@ -305,6 +305,7 @@ def generate_standard_desc(data, prefix):
                 break
         values.append(found)
         
+    # TỰ ĐỘNG ẨN THÔNG SỐ TÙY CHỌN Ở CUỐI CHUỖI
     while values and (values[-1] == "N/A" or values[-1] == "") and rule["attrs"][len(values)-1] in OPTIONAL_ATTRS:
         values.pop()
         
@@ -351,7 +352,7 @@ if uploaded_file:
             desc_eng = str(row.get('Mô tả/Yêu cầu kỹ thuật', '')).strip()
             mpn = str(row.get('Mã NSX (Tham khảo hoặc tương đương)', '')).strip()
             
-            # --- 1. LOCAL FORMAT CHECK ---
+            # --- 1. LOCAL FORMAT CHECK THÔNG MINH ---
             parts = desc_eng.split(";")
             prefix = parts[0].strip().upper() if len(parts) > 0 else ""
             user_params = [p.strip() for p in parts[1].split(",")] if len(parts) > 1 else []
@@ -364,14 +365,17 @@ if uploaded_file:
                 format_status = "🔴 Lỗi: Thiếu dấu chấm phẩy (;) phân cách Tiền tố"
                 if prefix in MASTER_RULES:
                     format_correct_template = f"{prefix};" + ",".join(MASTER_RULES[prefix]["attrs"])
-                elif "MODULE" in prefix:
-                    format_correct_template = "MODULE SMD;Đặc tính,Kích thước HOẶC MODULE DIP;Đặc tính,Kích thước"
                 else:
                     format_correct_template = "-"
             elif prefix not in MASTER_RULES:
-                if "MODULE" in prefix and ("SMD" not in prefix and "DIP" not in prefix):
-                    format_status = "🔴 Lỗi: Tiền tố MODULE chung chung, thiếu SMD hoặc DIP"
-                    format_correct_template = "MODULE SMD;Đặc tính,Kích thước HOẶC MODULE DIP;Đặc tính,Kích thước"
+                # Thuật toán tự động tìm và gợi ý hậu tố (Auto-Suggest Suffix)
+                possible_matches = [k for k in MASTER_RULES.keys() if k.startswith(prefix + "-") or k.startswith(prefix + ",") or k.startswith(prefix + " ")]
+                
+                if possible_matches:
+                    suffixes = [k.replace(prefix, "") for k in possible_matches]
+                    format_status = f"🔴 Lỗi: Tiền tố '{prefix}' chung chung, hãy thêm hậu tố: {', '.join(suffixes)}"
+                    templates = [f"{m};..." for m in possible_matches[:2]]
+                    format_correct_template = " HOẶC ".join(templates) + ("..." if len(possible_matches) > 2 else "")
                 else:
                     format_status = f"🔴 Sai Tiền tố: '{prefix}' không hợp lệ"
                     format_correct_template = "-"
@@ -379,6 +383,7 @@ if uploaded_file:
                 rule = MASTER_RULES[prefix]
                 expected_attrs = rule["attrs"]
                 
+                # Logic bỏ qua lỗi thiếu đối với các thông số thuộc OPTIONAL_ATTRS
                 missing_all = [expected_attrs[i] for i in range(len(user_params), len(expected_attrs))]
                 missing_strict = [m for m in missing_all if m not in OPTIONAL_ATTRS]
                 extra = user_params[len(expected_attrs):]
@@ -390,6 +395,7 @@ if uploaded_file:
                     format_status = f"🔴 Lỗi: {'; '.join(err_msg)}"
                     
                     filled_params = user_params[:len(expected_attrs)] + ["N/A"] * len(missing_all)
+                    # Gọt các chữ N/A thừa thuộc nhóm Optional
                     while filled_params and filled_params[-1] == "N/A" and expected_attrs[len(filled_params)-1] in OPTIONAL_ATTRS:
                         filled_params.pop()
                         
