@@ -125,8 +125,8 @@ MASTER_RULES = {
     "SWITCH": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
     "PUSH-BUTTON": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
     "THERMISTOR": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
-    "IND-SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Dòng điện", "Chuẩn"], "trunc": ["Chuẩn", "Kích thước"]},
-    "IND-DIP": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Dòng điện", "Chuẩn"], "trunc": ["Chuẩn", "Kích thước"]},
+    "IND-SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Dòng điện", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
+    "IND-DIP": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Dòng điện", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "IND-VR": {"attrs": ["Giá trị", "Sai số", "Kích thước", "DCR", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "IND-ARRAY": {"attrs": ["Giá trị", "Series inductance", "DCR", "Kích thước", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "IND-KITS": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Số lượng"], "trunc": ["Sai số", "Số lượng"]},
@@ -299,14 +299,12 @@ def generate_standard_desc(data, prefix):
         for key in NEXAR_MAPPING.get(attr, []):
             if key.lower() in spec_dict:
                 val_clean = clean_digikey_value(spec_dict[key.lower()])
-                # Ép kiểu N/A nếu là trường Chuẩn mà lại không phải Auto
                 if attr == "Chuẩn" and val_clean != "Auto":
                     val_clean = "N/A"
                 found = val_clean
                 break
         values.append(found)
         
-    # TỰ ĐỘNG ẨN THÔNG SỐ TÙY CHỌN Ở CUỐI: Cắt các giá trị "N/A" hoặc "" nếu nó thuộc nhóm OPTIONAL_ATTRS
     while values and (values[-1] == "N/A" or values[-1] == "") and rule["attrs"][len(values)-1] in OPTIONAL_ATTRS:
         values.pop()
         
@@ -381,7 +379,6 @@ if uploaded_file:
                 rule = MASTER_RULES[prefix]
                 expected_attrs = rule["attrs"]
                 
-                # Logic xác định Lỗi Dư/Thiếu đã bỏ qua OPTIONAL_ATTRS ở đuôi
                 missing_all = [expected_attrs[i] for i in range(len(user_params), len(expected_attrs))]
                 missing_strict = [m for m in missing_all if m not in OPTIONAL_ATTRS]
                 extra = user_params[len(expected_attrs):]
@@ -393,13 +390,11 @@ if uploaded_file:
                     format_status = f"🔴 Lỗi: {'; '.join(err_msg)}"
                     
                     filled_params = user_params[:len(expected_attrs)] + ["N/A"] * len(missing_all)
-                    # Gọt các chữ N/A thừa thuộc nhóm Optional
                     while filled_params and filled_params[-1] == "N/A" and expected_attrs[len(filled_params)-1] in OPTIONAL_ATTRS:
                         filled_params.pop()
                         
                     format_correct_template = f"{prefix};" + ",".join(filled_params)
-                else:
-                    # Parse dữ liệu người dùng 
+                else: 
                     for i, attr in enumerate(expected_attrs[:len(user_params)]):
                         user_parsed[attr] = user_params[i]
 
