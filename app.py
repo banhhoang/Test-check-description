@@ -11,7 +11,12 @@ import re
 CLIENT_ID = "GhisD3uPdgME76XnklG6L28VGe1ZBKdJxb1RfFs4VV5b3Kod"
 CLIENT_SECRET = "dndU2Pad5yGcCIFw1uT7vwUhZOq55pSMGBYbQkYLfSHJi7fEaF3yP5ZzGPvi0XKa"
 
-# Đã bổ sung toàn bộ các từ khóa tiếng Anh mới để API trích xuất chính xác 100%
+# DANH SÁCH CÁC THÔNG SỐ TÙY CHỌN (Được phép thiếu ở cuối chuỗi mà không báo lỗi)
+OPTIONAL_ATTRS = [
+    "Chuẩn", "Special Info", "Đặc tính", "ESR", 
+    "Color", "Internal Connection", "Length", "Version", "Model"
+]
+
 NEXAR_MAPPING = {
     "Giá trị": ["resistance", "capacitance", "inductance", "resistance (ohms)", "value"],
     "Sai số": ["tolerance"],
@@ -194,7 +199,6 @@ def get_digikey_data(mpn, token):
         "X-DIGIKEY-Locale-Language": "en",
         "X-DIGIKEY-Locale-Currency": "USD"
     }
-    
     search_url = "https://api.digikey.com/products/v4/search/keyword"
     payload = {"Keywords": mpn}
     dk_part_num = mpn
@@ -217,16 +221,13 @@ def get_digikey_data(mpn, token):
             return r2.json()
     except:
         pass
-        
     return None
 
 def clean_digikey_value(val):
     if pd.isna(val) or not val or val == "N/A":
         return "N/A"
     
-    val = str(val)
-    val = val.replace(",", ".")
-    val = val.replace("±", "").replace("µ", "u")
+    val = str(val).replace(",", ".").replace("±", "").replace("µ", "u")
     
     if " (" in val:
         val = val.split(" (")[0]
@@ -236,8 +237,7 @@ def clean_digikey_value(val):
     val = val.replace(" ", "")
     
     val = val.replace("kOhms", "KOHM").replace("Ohms", "OHM").replace("ohms", "OHM")
-    val = val.replace("Ohm", "OHM").replace("ohm", "OHM")
-    val = val.replace("mOhms", "mOHM")
+    val = val.replace("Ohm", "OHM").replace("ohm", "OHM").replace("mOhms", "mOHM")
     
     if val == "AEC-Q200":
         return "Auto"
@@ -286,7 +286,6 @@ def generate_standard_desc(data, prefix):
         key = p.get("ParameterText", "") or p.get("Parameter", "")
         if isinstance(key, dict): 
             key = key.get("Name", "")
-            
         if key:
             val = p.get("ValueText", "") or p.get("Value", "")
             spec_dict[key.lower()] = val
@@ -299,9 +298,17 @@ def generate_standard_desc(data, prefix):
         found = "N/A"
         for key in NEXAR_MAPPING.get(attr, []):
             if key.lower() in spec_dict:
-                found = clean_digikey_value(spec_dict[key.lower()])
+                val_clean = clean_digikey_value(spec_dict[key.lower()])
+                # Ép kiểu N/A nếu là trường Chuẩn mà lại không phải Auto
+                if attr == "Chuẩn" and val_clean != "Auto":
+                    val_clean = "N/A"
+                found = val_clean
                 break
         values.append(found)
+        
+    # TỰ ĐỘNG ẨN THÔNG SỐ TÙY CHỌN Ở CUỐI: Cắt các giá trị "N/A" hoặc "" nếu nó thuộc nhóm OPTIONAL_ATTRS
+    while values and (values[-1] == "N/A" or values[-1] == "") and rule["attrs"][len(values)-1] in OPTIONAL_ATTRS:
+        values.pop()
         
     return f"{prefix};" + ",".join(values)
 
@@ -346,9 +353,7 @@ if uploaded_file:
             desc_eng = str(row.get('Mô tả/Yêu cầu kỹ thuật', '')).strip()
             mpn = str(row.get('Mã NSX (Tham khảo hoặc tương đương)', '')).strip()
             
-            # -------------------------------------------------------------
-            # BƯỚC 1: KIỂM TRA ĐỊNH DẠNG MÔ TẢ (LOCAL FORMAT CHECK)
-            # -------------------------------------------------------------
+            # --- 1. LOCAL FORMAT CHECK ---
             parts = desc_eng.split(";")
             prefix = parts[0].strip().upper() if len(parts) > 0 else ""
             user_params = [p.strip() for p in parts[1].split(",")] if len(parts) > 1 else []
@@ -376,29 +381,32 @@ if uploaded_file:
                 rule = MASTER_RULES[prefix]
                 expected_attrs = rule["attrs"]
                 
-                if len(user_params) != len(expected_attrs):
-                    missing = [expected_attrs[i] for i in range(len(user_params), min(len(user_params), len(expected_attrs)), 1)]
-                    if len(user_params) < len(expected_attrs):
-                        missing = expected_attrs[len(user_params):]
-                    extra = user_params[len(expected_attrs):]
-                    
+                # Logic xác định Lỗi Dư/Thiếu đã bỏ qua OPTIONAL_ATTRS ở đuôi
+                missing_all = [expected_attrs[i] for i in range(len(user_params), len(expected_attrs))]
+                missing_strict = [m for m in missing_all if m not in OPTIONAL_ATTRS]
+                extra = user_params[len(expected_attrs):]
+                
+                if missing_strict or extra:
                     err_msg = []
-                    if missing: err_msg.append(f"Thiếu: {', '.join(missing)}")
+                    if missing_strict: err_msg.append(f"Thiếu: {', '.join(missing_strict)}")
                     if extra: err_msg.append(f"Dư: {', '.join(extra)}")
                     format_status = f"🔴 Lỗi: {'; '.join(err_msg)}"
                     
-                    filled_params = user_params[:len(expected_attrs)] + ["N/A"] * len(missing)
+                    filled_params = user_params[:len(expected_attrs)] + ["N/A"] * len(missing_all)
+                    # Gọt các chữ N/A thừa thuộc nhóm Optional
+                    while filled_params and filled_params[-1] == "N/A" and expected_attrs[len(filled_params)-1] in OPTIONAL_ATTRS:
+                        filled_params.pop()
+                        
                     format_correct_template = f"{prefix};" + ",".join(filled_params)
                 else:
-                    for i, attr in enumerate(expected_attrs):
+                    # Parse dữ liệu người dùng 
+                    for i, attr in enumerate(expected_attrs[:len(user_params)]):
                         user_parsed[attr] = user_params[i]
 
             format_status_list.append(format_status)
             format_template_list.append(format_correct_template)
 
-            # -------------------------------------------------------------
-            # BƯỚC 2: GỌT ĐỘ DÀI MÔ TẢ THEO TRUNC RULES (OFFLINE)
-            # -------------------------------------------------------------
+            # --- 2. GỌT ĐỘ DÀI TRUNC (OFFLINE) ---
             suggestion = "-"
             if format_status == "🟢 Hợp lệ":
                 if len(desc_eng) <= 40:
@@ -424,9 +432,7 @@ if uploaded_file:
             
             suggest_list.append(suggestion)
 
-            # -------------------------------------------------------------
-            # BƯỚC 3: CHECK DIGIKEY API ĐỘC LẬP
-            # -------------------------------------------------------------
+            # --- 3. DIGIKEY API ĐỘC LẬP ---
             digikey_status = "-"
             api_desc = "-"
             
@@ -444,9 +450,7 @@ if uploaded_file:
             digikey_status_list.append(digikey_status)
             api_desc_list.append(api_desc)
             
-            # -------------------------------------------------------------
-            # BƯỚC 4: TỔNG HỢP GHI CHÚ
-            # -------------------------------------------------------------
+            # --- 4. ĐỐI CHIẾU ---
             if format_status != "🟢 Hợp lệ":
                 note_list.append("Cần sửa lỗi Format trước khi đối chiếu dữ liệu")
             elif digikey_status == "🟢 Tồn tại" and api_desc != "-":
@@ -469,9 +473,7 @@ if uploaded_file:
             else:
                 note_list.append("-")
         
-        # -------------------------------------------------------------
-        # XUẤT CÁC CỘT THEO ĐÚNG THỨ TỰ YÊU CẦU
-        # -------------------------------------------------------------
+        # --- XUẤT EXCEL ---
         df["Format Status"] = format_status_list
         df["Mô tả đúng format"] = format_template_list
         df["Đề xuất cắt (<40 ký tự)"] = suggest_list
