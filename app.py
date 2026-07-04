@@ -10,17 +10,18 @@ import json
 CLIENT_ID = "GhisD3uPdgME76XnklG6L28VGe1ZBKdJxb1RfFs4VV5b3Kod"
 CLIENT_SECRET = "dndU2Pad5yGcCIFw1uT7vwUhZOq55pSMGBYbQkYLfSHJi7fEaF3yP5ZzGPvi0XKa"
 
+# Đã mở rộng từ điển để bắt sạch các thông số của MOSFET, DIODE, INDUCTOR từ DigiKey
 NEXAR_MAPPING = {
     "Giá trị": ["resistance", "capacitance", "inductance", "resistance (ohms)", "value"],
     "Sai số": ["tolerance"],
     "Kích thước": ["package / case", "case/package", "case code - mm", "size / dimension", "supplier device package"],
     "Công suất": ["power (watts)", "power rating", "power"],
-    "Điện áp": ["voltage rating", "voltage - rated", "voltage - dc reverse (vr) (max)", "voltage"],
-    "Đặc tính": ["temperature coefficient", "features", "temp coefficient", "description"],
-    "ESR": ["equivalent series resistance"],
-    "Dòng điện": ["current rating", "current - average rectified (io)", "current"],
+    "Điện áp": ["voltage rating", "voltage - rated", "voltage - dc reverse (vr) (max)", "voltage", "drain to source voltage (vdss)", "voltage - breakdown (min)", "voltage - zener (nom) (vz)"],
+    "Đặc tính": ["temperature coefficient", "features", "temp coefficient", "description", "fet type", "diode type", "transistor type"],
+    "ESR": ["equivalent series resistance", "esr (equivalent series resistance)", "dc resistance (dcr)"],
+    "Dòng điện": ["current rating", "current rating (amps)", "current - average rectified (io)", "current", "current - continuous drain (id) @ 25°c", "current - max"],
     "Số lượng": ["quantity"],
-    "Chuẩn": ["standard"],
+    "Chuẩn": ["standard", "ratings"], # Đã thêm Ratings để bắt tiêu chuẩn AEC-Q200
     "Số cực": ["number of positions", "positions"]
 }
 
@@ -186,23 +187,52 @@ def get_digikey_data(mpn, token):
         
     return None
 
+def clean_digikey_value(val):
+    """Hàm gọt rửa dữ liệu rác từ DigiKey để chuẩn hóa với Master Rules"""
+    if not val or val == "N/A":
+        return "N/A"
+    
+    val = str(val)
+    # Quy định hiển thị số thập phân bằng dấu chấm
+    val = val.replace(",", ".")
+    
+    # Loại bỏ ký tự đặc biệt
+    val = val.replace("±", "")
+    val = val.replace("µ", "u")
+    
+    # Cắt bỏ phần đóng ngoặc của hệ Metric: ví dụ "1210 (3225 Metric)" -> "1210"
+    if " (" in val:
+        val = val.split(" (")[0]
+        
+    # Xóa khoảng trắng để đối chiếu dễ dàng hơn (19.1 kOhms -> 19.1kOhms)
+    val = val.replace(" ", "")
+    
+    # Đồng bộ hóa đơn vị
+    val = val.replace("kOhms", "KOHM").replace("Ohms", "OHM").replace("ohms", "OHM")
+    val = val.replace("Ohm", "OHM").replace("ohm", "OHM")
+    val = val.replace("mOhms", "mOHM")
+    
+    # Chuẩn hóa từ khóa Automotive
+    if val == "AEC-Q200":
+        return "Auto"
+        
+    return val
+
 def generate_standard_desc(data, prefix):
     if not data: return None
     
-    # Ở API v4 ProductDetails, mọi thông số đều nằm trong object "Product"
     product_data = data.get("Product", data)
     params = product_data.get("Parameters", [])
     
     spec_dict = {}
     for p in params:
-        # Lấy theo chuẩn ParameterText và ValueText như log bạn gửi
         key = p.get("ParameterText", "") or p.get("Parameter", "")
         if isinstance(key, dict): 
             key = key.get("Name", "")
             
         if key:
             val = p.get("ValueText", "") or p.get("Value", "")
-            spec_dict[key.lower()] = str(val).replace(",", "")
+            spec_dict[key.lower()] = val # Lưu giá trị thô trước
             
     rule = MASTER_RULES.get(prefix)
     if not rule: return None
@@ -212,7 +242,8 @@ def generate_standard_desc(data, prefix):
         found = "N/A"
         for key in NEXAR_MAPPING.get(attr, []):
             if key.lower() in spec_dict:
-                found = spec_dict[key.lower()]
+                # Đưa dữ liệu qua bộ lọc Clean Value trước khi ghép chuỗi
+                found = clean_digikey_value(spec_dict[key.lower()])
                 break
         values.append(found)
         
@@ -276,7 +307,12 @@ if uploaded_file:
                 status_list.append("🟡 UNVERIFIED"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Không tìm thấy dữ liệu trên DigiKey (Check lại mã NSX)")
             else:
                 std_desc = generate_standard_desc(data, prefix)
-                if std_desc == desc_eng.upper():
+                
+                # Để so sánh công bằng, loại bỏ khoảng trắng ở cả chuỗi người dùng nhập trước khi đối chiếu
+                clean_desc_eng = desc_eng.replace(" ", "").upper()
+                clean_std_desc = std_desc.replace(" ", "").upper()
+                
+                if clean_std_desc == clean_desc_eng:
                     if len(std_desc) <= 40:
                         status_list.append("🟢 PASS"); api_desc_list.append(std_desc); suggest_list.append(std_desc); note_list.append("Khớp 100% với dữ liệu hãng")
                     else:
