@@ -2,25 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import io
-# --- PHẦN BÁO TRẠNG THÁI KẾT NỐI ---
-st.subheader("Trạng thái hệ thống")
-status_col1, status_col2 = st.columns([1, 4])
 
-with status_col1:
-    if 'digikey_token' not in st.session_state:
-        st.write("🟢 API: **Sẵn sàng**")
-    else:
-        st.write("🟢 API: **Đã kết nối**")
-
-# Kiểm tra nhanh kết nối (Test connection)
-if st.button("🔄 Kiểm tra kết nối DigiKey"):
-    with st.spinner("Đang thử kết nối..."):
-        token = get_token()
-        if token:
-            st.session_state['digikey_token'] = token
-            st.success("Kết nối thành công tới máy chủ DigiKey!")
-        else:
-            st.error("Kết nối thất bại. Kiểm tra lại Client ID và Secret!")
 # ==========================================
 # 1. CẤU HÌNH & THƯ VIỆN MASTER RULES
 # ==========================================
@@ -40,6 +22,25 @@ NEXAR_MAPPING = {
     "Chuẩn": ["standard"],
     "Số cực": ["number of positions", "positions"]
 }
+# --- PHẦN BÁO TRẠNG THÁI KẾT NỐI ---
+st.subheader("Trạng thái hệ thống")
+status_col1, status_col2 = st.columns([1, 4])
+
+with status_col1:
+    if 'digikey_token' not in st.session_state:
+        st.write("🟢 API: **Sẵn sàng**")
+    else:
+        st.write("🟢 API: **Đã kết nối**")
+
+# Kiểm tra nhanh kết nối (Test connection)
+if st.button("🔄 Kiểm tra kết nối DigiKey"):
+    with st.spinner("Đang thử kết nối..."):
+        token = get_token()
+        if token:
+            st.session_state['digikey_token'] = token
+            st.success("Kết nối thành công tới máy chủ DigiKey!")
+        else:
+            st.error("Kết nối thất bại. Kiểm tra lại Client ID và Secret!")
 
 # Đầy đủ Master Rules từ yêu cầu của bạn
 MASTER_RULES = {
