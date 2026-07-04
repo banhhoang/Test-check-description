@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import io
 import json
+import re
 
 # ==========================================
 # 1. CẤU HÌNH & THƯ VIỆN MASTER RULES
@@ -10,7 +11,6 @@ import json
 CLIENT_ID = "GhisD3uPdgME76XnklG6L28VGe1ZBKdJxb1RfFs4VV5b3Kod"
 CLIENT_SECRET = "dndU2Pad5yGcCIFw1uT7vwUhZOq55pSMGBYbQkYLfSHJi7fEaF3yP5ZzGPvi0XKa"
 
-# Đã mở rộng từ điển để bắt sạch các thông số của MOSFET, DIODE, INDUCTOR từ DigiKey
 NEXAR_MAPPING = {
     "Giá trị": ["resistance", "capacitance", "inductance", "resistance (ohms)", "value"],
     "Sai số": ["tolerance"],
@@ -21,7 +21,7 @@ NEXAR_MAPPING = {
     "ESR": ["equivalent series resistance", "esr (equivalent series resistance)", "dc resistance (dcr)"],
     "Dòng điện": ["current rating", "current rating (amps)", "current - average rectified (io)", "current", "current - continuous drain (id) @ 25°c", "current - max"],
     "Số lượng": ["quantity"],
-    "Chuẩn": ["standard", "ratings"], # Đã thêm Ratings để bắt tiêu chuẩn AEC-Q200
+    "Chuẩn": ["standard", "ratings"],
     "Số cực": ["number of positions", "positions"]
 }
 
@@ -187,35 +187,86 @@ def get_digikey_data(mpn, token):
         
     return None
 
+def get_1000pcs_price(data):
+    """Trích xuất giá cho mốc 1000 pcs từ API"""
+    if not data: return ""
+    try:
+        product_data = data.get("Product", data)
+        variations = product_data.get("ProductVariations", [])
+        for var in variations:
+            pricing = var.get("StandardPricing", [])
+            for p in pricing:
+                if p.get("BreakQuantity") == 1000:
+                    return f"${p.get('UnitPrice')}"
+    except:
+        pass
+    return ""
+
 def clean_digikey_value(val):
-    """Hàm gọt rửa dữ liệu rác từ DigiKey để chuẩn hóa với Master Rules"""
-    if not val or val == "N/A":
+    if pd.isna(val) or not val or val == "N/A":
         return "N/A"
     
     val = str(val)
-    # Quy định hiển thị số thập phân bằng dấu chấm
+    # Đồng bộ dấu thập phân
     val = val.replace(",", ".")
-    
-    # Loại bỏ ký tự đặc biệt
     val = val.replace("±", "")
     val = val.replace("µ", "u")
     
-    # Cắt bỏ phần đóng ngoặc của hệ Metric: ví dụ "1210 (3225 Metric)" -> "1210"
+    # Cắt Metric (Metric)
     if " (" in val:
         val = val.split(" (")[0]
         
-    # Xóa khoảng trắng để đối chiếu dễ dàng hơn (19.1 kOhms -> 19.1kOhms)
+    # CHUẨN HÓA C0G/NP0 (Xử lý dấu chấm, phẩy, và khoảng trắng)
+    val = val.replace("C0G. NP0", "C0G/NP0").replace("C0G.NP0", "C0G/NP0")
+    val = val.replace("C0G, NP0", "C0G/NP0").replace("C0G,NP0", "C0G/NP0")
+    
+    # Xóa khoảng trắng để chuẩn hóa form
     val = val.replace(" ", "")
     
-    # Đồng bộ hóa đơn vị
+    # Chuẩn hóa Ohms
     val = val.replace("kOhms", "KOHM").replace("Ohms", "OHM").replace("ohms", "OHM")
     val = val.replace("Ohm", "OHM").replace("ohm", "OHM")
     val = val.replace("mOhms", "mOHM")
     
-    # Chuẩn hóa từ khóa Automotive
     if val == "AEC-Q200":
         return "Auto"
         
+    # LOGIC QUY ĐỔI ĐƠN VỊ THÔNG MINH (1000pF -> 1nF, 2000V -> 2kV)
+    match = re.match(r"^([\d\.]+)([a-zA-Z]+)$", val)
+    if match:
+        num_str = match.group(1)
+        unit = match.group(2).upper()
+        try:
+            num = float(num_str)
+            # Tụ điện
+            if unit == "PF" and num >= 1000:
+                num = num / 1000
+                unit = "NF"
+            elif unit == "NF" and num >= 1000:
+                num = num / 1000
+                unit = "UF"
+            # Điện áp
+            elif unit == "V" and num >= 1000:
+                num = num / 1000
+                unit = "KV"
+            
+            # Format số (ví dụ 1.0nF -> 1nF, nhưng 4.7nF giữ nguyên)
+            if num.is_integer():
+                num_str = str(int(num))
+            else:
+                num_str = str(num)
+            
+            # Khôi phục Case chuẩn
+            if unit == "PF": unit = "pF"
+            elif unit == "NF": unit = "nF"
+            elif unit == "UF": unit = "uF"
+            elif unit == "KV": unit = "kV"
+            elif unit == "V": unit = "V"
+            
+            val = num_str + unit
+        except ValueError:
+            pass
+
     return val
 
 def generate_standard_desc(data, prefix):
@@ -232,7 +283,7 @@ def generate_standard_desc(data, prefix):
             
         if key:
             val = p.get("ValueText", "") or p.get("Value", "")
-            spec_dict[key.lower()] = val # Lưu giá trị thô trước
+            spec_dict[key.lower()] = val
             
     rule = MASTER_RULES.get(prefix)
     if not rule: return None
@@ -242,7 +293,6 @@ def generate_standard_desc(data, prefix):
         found = "N/A"
         for key in NEXAR_MAPPING.get(attr, []):
             if key.lower() in spec_dict:
-                # Đưa dữ liệu qua bộ lọc Clean Value trước khi ghép chuỗi
                 found = clean_digikey_value(spec_dict[key.lower()])
                 break
         values.append(found)
@@ -281,7 +331,7 @@ if uploaded_file:
     df = pd.read_excel(uploaded_file)
     if st.button("🚀 Chạy kiểm tra"):
         token = get_token()
-        status_list, api_desc_list, suggest_list, note_list = [], [], [], []
+        status_list, api_desc_list, suggest_list, note_list, price_1000_list = [], [], [], [], []
         
         for _, row in df.iterrows():
             desc_eng = str(row.get('Mô tả/Yêu cầu kỹ thuật', '')).strip()
@@ -290,40 +340,52 @@ if uploaded_file:
             prefix = desc_eng.split(";")[0].strip().upper() if ";" in desc_eng else ""
             
             if pd.isna(mpn) or mpn == 'nan' or mpn == "":
-                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Dòng này bị bỏ trống Mã NSX nên không thể tra cứu API")
+                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Thiếu Mã NSX"); price_1000_list.append("")
                 continue
                 
             if ";" not in desc_eng:
-                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Lỗi format: Thiếu dấu chấm phẩy (;)")
+                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Lỗi format: Thiếu dấu chấm phẩy (;)"); price_1000_list.append("")
                 continue
                 
             if prefix not in MASTER_RULES:
-                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append(f"Sai chuẩn Tiền tố (Của bạn: {desc_eng.split(';')[0]})")
+                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append(f"Sai Tiền tố: {desc_eng.split(';')[0]}"); price_1000_list.append("")
                 continue
             
             data = get_digikey_data(mpn, token)
             
             if not data:
-                status_list.append("🟡 UNVERIFIED"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Không tìm thấy dữ liệu trên DigiKey (Check lại mã NSX)")
+                status_list.append("🟡 UNVERIFIED"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Không tìm thấy dữ liệu trên DigiKey"); price_1000_list.append("")
             else:
                 std_desc = generate_standard_desc(data, prefix)
+                price_1000_list.append(get_1000pcs_price(data))
                 
-                # Để so sánh công bằng, loại bỏ khoảng trắng ở cả chuỗi người dùng nhập trước khi đối chiếu
                 clean_desc_eng = desc_eng.replace(" ", "").upper()
                 clean_std_desc = std_desc.replace(" ", "").upper()
                 
-                if clean_std_desc == clean_desc_eng:
+                # LOGIC KHỚP ĐẶC CÁCH (Cho phép user gõ C0G hoặc NP0 tự động Pass với C0G/NP0)
+                is_match = False
+                if "C0G/NP0" in clean_std_desc:
+                    alt_desc_1 = clean_std_desc.replace("C0G/NP0", "C0G")
+                    alt_desc_2 = clean_std_desc.replace("C0G/NP0", "NP0")
+                    if (clean_std_desc == clean_desc_eng) or (alt_desc_1 == clean_desc_eng) or (alt_desc_2 == clean_desc_eng):
+                        is_match = True
+                else:
+                    is_match = (clean_std_desc == clean_desc_eng)
+
+                if is_match:
                     if len(std_desc) <= 40:
                         status_list.append("🟢 PASS"); api_desc_list.append(std_desc); suggest_list.append(std_desc); note_list.append("Khớp 100% với dữ liệu hãng")
                     else:
-                        status_list.append("🟡 WARNING"); api_desc_list.append(std_desc); suggest_list.append(get_suggestion(std_desc, prefix)); note_list.append("Mô tả đúng cấu trúc API nhưng vượt 40 ký tự.")
+                        status_list.append("🟡 WARNING"); api_desc_list.append(std_desc); suggest_list.append(get_suggestion(std_desc, prefix)); note_list.append("Vượt 40 ký tự.")
                 else:
-                    status_list.append("🔴 FAIL"); api_desc_list.append(std_desc); suggest_list.append("-"); note_list.append("Thông số mô tả không khớp với thông số thực tế của Mã NSX từ API")
+                    status_list.append("🔴 FAIL"); api_desc_list.append(std_desc); suggest_list.append("-"); note_list.append("Thông số mô tả không khớp với API")
         
         df["Status"] = status_list
         df["Mô tả API"] = api_desc_list
         df["Suggest"] = suggest_list
         df["Note"] = note_list
+        df["Quantity Required"] = ""
+        df["1000pcs Price"] = price_1000_list
         
         st.dataframe(df)
         
