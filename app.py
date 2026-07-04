@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import json
+import pandas as pd
 
 CLIENT_ID = "GhisD3uPdgME76XnklG6L28VGe1ZBKdJxb1RfFs4VV5b3Kod"
 CLIENT_SECRET = "dndU2Pad5yGcCIFw1uT7vwUhZOq55pSMGBYbQkYLfSHJi7fEaF3yP5ZzGPvi0XKa"
@@ -14,44 +15,44 @@ def get_token():
 def debug_digikey_part(mpn, token):
     headers = {"Authorization": f"Bearer {token}", "X-DIGIKEY-Client-Id": CLIENT_ID, "Content-Type": "application/json"}
     
-    # 1. Tìm kiếm Part Number
+    # 1. Search
     search_url = "https://api.digikey.com/products/v4/search/keyword"
     r = requests.post(search_url, headers=headers, data=json.dumps({"Keywords": mpn}))
+    if r.status_code != 200: return f"Lỗi tìm kiếm: {r.status_code}"
     
-    if r.status_code != 200: return f"Lỗi kết nối tìm kiếm: {r.text}"
     data = r.json()
-    
-    if not data.get("ExactMatches") and not data.get("Products"): return "Không tìm thấy linh kiện!"
+    if not data.get("ExactMatches") and not data.get("Products"): return None
     
     dk_part = data["ExactMatches"][0]["DigiKeyProductNumber"] if data.get("ExactMatches") else data["Products"][0]["DigiKeyProductNumber"]
     
-    # 2. Lấy chi tiết
+    # 2. Get Detail
     detail_url = f"https://api.digikey.com/products/v4/search/{dk_part}/productdetails"
     r2 = requests.get(detail_url, headers=headers)
-    if r2.status_code != 200: return f"Lỗi lấy thông tin: {r2.text}"
-    
-    return r2.json()
+    return r2.json() if r2.status_code == 200 else None
 
-st.title("🔍 DigiKey Parameter Debugger")
-mpn = st.text_input("Nhập Mã NSX (MPN) để debug:")
+st.title("🔍 DigiKey Batch Debugger")
+input_text = st.text_area("Nhập danh sách Mã NSX (mỗi mã 1 dòng):", height=200)
 
-if st.button("🚀 Lấy dữ liệu thô"):
+if st.button("🚀 Lấy dữ liệu hàng loạt"):
+    mpn_list = [line.strip() for line in input_text.split('\n') if line.strip()]
     token = get_token()
-    if not token: st.error("Token lỗi!")
+    
+    if not mpn_list: st.warning("Vui lòng nhập mã!")
+    elif not token: st.error("Lỗi xác thực Token!")
     else:
-        result = debug_digikey_part(mpn, token)
-        if isinstance(result, str): st.error(result)
-        else:
-            st.success("Đã lấy được dữ liệu! Đây là danh sách các thông số trả về:")
-            params = result.get("Product", {}).get("Parameters", [])
+        progress = st.progress(0)
+        for i, mpn in enumerate(mpn_list):
+            st.write(f"### Đang xử lý: {mpn}")
+            result = debug_digikey_part(mpn, token)
             
-            # Hiển thị dạng bảng cho dễ copy
-            debug_data = []
-            for p in params:
-                debug_data.append({"ParameterName": p.get("ParameterText"), "Value": p.get("ValueText")})
+            if not result:
+                st.error(f"Không tìm thấy dữ liệu cho: {mpn}")
+            else:
+                with st.expander(f"Xem dữ liệu thô: {mpn}"):
+                    params = result.get("Product", {}).get("Parameters", [])
+                    debug_data = [{"ParameterName": p.get("ParameterText"), "Value": p.get("ValueText")} for p in params]
+                    st.table(pd.DataFrame(debug_data))
+                    st.json(params)
             
-            st.table(pd.DataFrame(debug_data))
-            
-            # Hiển thị JSON thô để bạn copy
-            st.subheader("Dữ liệu thô (Để copy cho tôi):")
-            st.json(params)
+            progress.progress((i + 1) / len(mpn_list))
+        st.success("Đã hoàn tất!")
