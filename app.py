@@ -81,6 +81,13 @@ def generate_standard_desc(data, prefix):
 # 3. GIAO DIỆN & VÒNG LẶP KIỂM TRA
 # ==========================================
 st.title("🛠️ Check Description (DigiKey API)")
+# Phần báo kết nối bạn viết ở đây (giờ nó sẽ không lỗi nữa)
+if st.button("🔄 Kiểm tra kết nối DigiKey"):
+    token = get_token() # Lúc này get_token đã được định nghĩa nên không lỗi
+    if token:
+        st.success("Kết nối thành công!")
+    else:
+        st.error("Kết nối thất bại!")
 uploaded_file = st.file_uploader("Upload BOM Excel", type=["xlsx"])
 
 if uploaded_file:
