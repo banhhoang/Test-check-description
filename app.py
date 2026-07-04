@@ -151,7 +151,6 @@ def get_token():
         return None
 
 def get_digikey_data(mpn, token):
-    # Sử dụng Headers đầy đủ theo yêu cầu của DigiKey API v4 POST Request
     headers = {
         "Authorization": f"Bearer {token}",
         "X-DIGIKEY-Client-Id": CLIENT_ID,
@@ -162,25 +161,24 @@ def get_digikey_data(mpn, token):
         "X-DIGIKEY-Locale-Currency": "USD"
     }
     
-    # CHIẾN THUẬT 1: TÌM KIẾM THEO TỪ KHÓA (CHUYÊN TRỊ MPN CỦA HÃNG)
+    # BƯỚC 1: DÙNG KEYWORD SEARCH ĐỂ LẤY ĐÚNG MÃ ĐỊNH DANH NỘI BỘ DIGIKEY
     search_url = "https://api.digikey.com/products/v4/search/keyword"
     payload = {"Keywords": mpn}
+    dk_part_num = mpn # Mặc định
     
     try:
         r = requests.post(search_url, headers=headers, data=json.dumps(payload))
         if r.status_code == 200:
-            data = r.json()
-            # Mức độ ưu tiên 1: Mã khớp chính xác tuyệt đối
-            if data.get("ExactMatches") and len(data["ExactMatches"]) > 0:
-                return data["ExactMatches"][0]
-            # Mức độ ưu tiên 2: Kết quả gần giống nhất
-            elif data.get("Products") and len(data["Products"]) > 0:
-                return data["Products"][0]
-    except Exception as e:
+            search_data = r.json()
+            if search_data.get("ExactMatches") and len(search_data["ExactMatches"]) > 0:
+                dk_part_num = search_data["ExactMatches"][0].get("DigiKeyPartNumber", mpn)
+            elif search_data.get("Products") and len(search_data["Products"]) > 0:
+                dk_part_num = search_data["Products"][0].get("DigiKeyPartNumber", mpn)
+    except:
         pass
         
-    # CHIẾN THUẬT 2: DỰ PHÒNG TÌM THEO ĐỊNH DANH NỘI BỘ DIGIKEY
-    detail_url = f"https://api.digikey.com/products/v4/search/{mpn}/productdetails"
+    # BƯỚC 2: GỌI PRODUCT DETAILS BẰNG MÃ VỪA LẤY ĐƯỢC ĐỂ LÔI FULL THÔNG SỐ
+    detail_url = f"https://api.digikey.com/products/v4/search/{dk_part_num}/productdetails"
     try:
         r2 = requests.get(detail_url, headers=headers)
         if r2.status_code == 200:
@@ -193,15 +191,14 @@ def get_digikey_data(mpn, token):
 def generate_standard_desc(data, prefix):
     if not data: return None
     
-    # Dữ liệu từ Keyword API nằm ở "Parameters", từ Product Details nằm ở "ProductParameters"
-    params = data.get("ProductParameters") or data.get("Parameters") or []
+    # Ở API v4 ProductDetails, mọi thông số đều nằm trong object "Product"
+    product_data = data.get("Product", data)
+    params = product_data.get("Parameters", [])
     
-    # Trích xuất toàn bộ dữ liệu trả về từ API dưới dạng Chữ thường để dễ so khớp
+    # Trích xuất và dọn dẹp các dấu phẩy bên trong thông số
     spec_dict = {}
     for p in params:
         key = p.get("Parameter", "")
-        if isinstance(key, dict):  # Xử lý trường hợp object phức tạp của DigiKey
-            key = key.get("Name", "")
         if key:
             spec_dict[key.lower()] = p.get("Value", "").replace(",", "")
             
@@ -257,8 +254,8 @@ if uploaded_file:
             desc_eng = str(row.get('Mô tả/Yêu cầu kỹ thuật', '')).strip()
             mpn = str(row.get('Mã NSX (Tham khảo hoặc tương đương)', '')).strip()
             
-            # Xóa sạch khoảng trắng dư thừa trong mô tả để trách lỗi Tiền tố
-            prefix = desc_eng.split(";")[0].strip() if ";" in desc_eng else ""
+            # Sử dụng .upper() để loại trừ lỗi gõ sai chữ hoa/thường ở tiền tố (ví dụ: Thermal pad -> THERMAL PAD)
+            prefix = desc_eng.split(";")[0].strip().upper() if ";" in desc_eng else ""
             
             if pd.isna(mpn) or mpn == 'nan' or mpn == "":
                 status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Dòng này bị bỏ trống Mã NSX nên không thể tra cứu API")
@@ -269,7 +266,7 @@ if uploaded_file:
                 continue
                 
             if prefix not in MASTER_RULES:
-                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append(f"Sai chuẩn Tiền tố (Của bạn: {prefix})")
+                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append(f"Sai chuẩn Tiền tố (Của bạn: {desc_eng.split(';')[0]})")
                 continue
             
             data = get_digikey_data(mpn, token)
@@ -278,7 +275,7 @@ if uploaded_file:
                 status_list.append("🟡 UNVERIFIED"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Không tìm thấy dữ liệu trên DigiKey (Check lại mã NSX)")
             else:
                 std_desc = generate_standard_desc(data, prefix)
-                if std_desc == desc_eng:
+                if std_desc == desc_eng.upper():
                     if len(std_desc) <= 40:
                         status_list.append("🟢 PASS"); api_desc_list.append(std_desc); suggest_list.append(std_desc); note_list.append("Khớp 100% với dữ liệu hãng")
                     else:
