@@ -65,7 +65,8 @@ NEXAR_MAPPING = {
     "Info": ["description", "features"],
     "Size": ["size / dimension"],
     "Model": ["series"],
-    "Version": ["version"]
+    "Version": ["version"],
+    "Name": ["description", "productdescription", "name", "series"]
 }
 
 MASTER_RULES = {
@@ -125,8 +126,8 @@ MASTER_RULES = {
     "SWITCH": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
     "PUSH-BUTTON": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
     "THERMISTOR": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
-    "IND-SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Dòng điện", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
-    "IND-DIP": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Dòng điện", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
+    "IND-SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Dòng điện", "Chuẩn"], "trunc": ["Kích thước","Chuẩn"]},
+    "IND-DIP": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Dòng điện", "Chuẩn"], "trunc": ["Kích thước","Chuẩn"]},
     "IND-VR": {"attrs": ["Giá trị", "Sai số", "Kích thước", "DCR", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "IND-ARRAY": {"attrs": ["Giá trị", "Series inductance", "DCR", "Kích thước", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "IND-KITS": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Số lượng"], "trunc": ["Sai số", "Số lượng"]},
@@ -140,6 +141,8 @@ MASTER_RULES = {
     "TVS-HYRIST": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
     "TVS-VARISTOR": {"attrs": ["Maximum DC Voltage", "Maximum AC Voltage", "Current Surge", "Dimension", "Special Info"], "trunc": ["Dimension", "Special Info"]},
     "FERRITE BEAD": {"attrs": ["Giá trị", "Dòng điện", "Kích thước", "DCR"], "trunc": ["Kích thước", "DCR"]},
+    "MODULE DIP": {"attrs": ["Name", "Dimension", "Special Info"], "trunc": ["Special Info", "Dimension"]},
+    "MODULE SMD": {"attrs": ["Name", "Dimension", "Special Info"], "trunc": ["Special Info", "Dimension"]},
     "CHOKE SMD": {"attrs": ["Giá trị", "Dòng điện", "Kích thước", "DCR"], "trunc": ["Kích thước", "DCR"]},
     "CHOKE DIP": {"attrs": ["Giá trị", "Dòng điện", "Kích thước", "DCR"], "trunc": ["Kích thước", "DCR"]},
     "ATTENUATOR": {"attrs": ["Specification", "Special Info"], "trunc": ["Special Info"]},
@@ -223,6 +226,20 @@ def get_digikey_data(mpn, token):
         pass
     return None
 
+def get_1000pcs_price(data):
+    if not data: return ""
+    try:
+        product_data = data.get("Product", data)
+        variations = product_data.get("ProductVariations", [])
+        for var in variations:
+            pricing = var.get("StandardPricing", [])
+            for p in pricing:
+                if p.get("BreakQuantity") == 1000:
+                    return f"${p.get('UnitPrice')}"
+    except:
+        pass
+    return ""
+
 def clean_digikey_value(val):
     if pd.isna(val) or not val or val == "N/A":
         return "N/A"
@@ -305,7 +322,6 @@ def generate_standard_desc(data, prefix):
                 break
         values.append(found)
         
-    # TỰ ĐỘNG ẨN THÔNG SỐ TÙY CHỌN Ở CUỐI CHUỖI
     while values and (values[-1] == "N/A" or values[-1] == "") and rule["attrs"][len(values)-1] in OPTIONAL_ATTRS:
         values.pop()
         
@@ -347,6 +363,7 @@ if uploaded_file:
         note_list = []
         digikey_status_list = []
         api_desc_list = []
+        price_1000_list = []
         
         for _, row in df.iterrows():
             desc_eng = str(row.get('Mô tả/Yêu cầu kỹ thuật', '')).strip()
@@ -368,7 +385,6 @@ if uploaded_file:
                 else:
                     format_correct_template = "-"
             elif prefix not in MASTER_RULES:
-                # Thuật toán tự động tìm và gợi ý hậu tố (Auto-Suggest Suffix)
                 possible_matches = [k for k in MASTER_RULES.keys() if k.startswith(prefix + "-") or k.startswith(prefix + ",") or k.startswith(prefix + " ")]
                 
                 if possible_matches:
@@ -383,7 +399,6 @@ if uploaded_file:
                 rule = MASTER_RULES[prefix]
                 expected_attrs = rule["attrs"]
                 
-                # Logic bỏ qua lỗi thiếu đối với các thông số thuộc OPTIONAL_ATTRS
                 missing_all = [expected_attrs[i] for i in range(len(user_params), len(expected_attrs))]
                 missing_strict = [m for m in missing_all if m not in OPTIONAL_ATTRS]
                 extra = user_params[len(expected_attrs):]
@@ -395,7 +410,6 @@ if uploaded_file:
                     format_status = f"🔴 Lỗi: {'; '.join(err_msg)}"
                     
                     filled_params = user_params[:len(expected_attrs)] + ["N/A"] * len(missing_all)
-                    # Gọt các chữ N/A thừa thuộc nhóm Optional
                     while filled_params and filled_params[-1] == "N/A" and expected_attrs[len(filled_params)-1] in OPTIONAL_ATTRS:
                         filled_params.pop()
                         
@@ -436,6 +450,7 @@ if uploaded_file:
             # --- 3. DIGIKEY API ĐỘC LẬP ---
             digikey_status = "-"
             api_desc = "-"
+            current_price = ""
             
             if pd.isna(mpn) or mpn == 'nan' or mpn == "":
                 digikey_status = "⚪ Trống Mã NSX"
@@ -445,11 +460,13 @@ if uploaded_file:
                     digikey_status = "🔴 Không tìm thấy"
                 else:
                     digikey_status = "🟢 Tồn tại"
+                    current_price = get_1000pcs_price(data)
                     if prefix in MASTER_RULES:
                         api_desc = generate_standard_desc(data, prefix)
             
             digikey_status_list.append(digikey_status)
             api_desc_list.append(api_desc)
+            price_1000_list.append(current_price)
             
             # --- 4. ĐỐI CHIẾU ---
             if format_status != "🟢 Hợp lệ":
@@ -481,6 +498,8 @@ if uploaded_file:
         df["Note"] = note_list
         df["DigiKey Status"] = digikey_status_list
         df["Mô tả API"] = api_desc_list
+        df["Quantity Required"] = ""
+        df["1000pcs Price"] = price_1000_list
         
         st.dataframe(df)
         
