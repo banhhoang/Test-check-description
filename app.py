@@ -187,43 +187,21 @@ def get_digikey_data(mpn, token):
         
     return None
 
-def get_1000pcs_price(data):
-    """Trích xuất giá cho mốc 1000 pcs từ API"""
-    if not data: return ""
-    try:
-        product_data = data.get("Product", data)
-        variations = product_data.get("ProductVariations", [])
-        for var in variations:
-            pricing = var.get("StandardPricing", [])
-            for p in pricing:
-                if p.get("BreakQuantity") == 1000:
-                    return f"${p.get('UnitPrice')}"
-    except:
-        pass
-    return ""
-
 def clean_digikey_value(val):
     if pd.isna(val) or not val or val == "N/A":
         return "N/A"
     
     val = str(val)
-    # Đồng bộ dấu thập phân
     val = val.replace(",", ".")
-    val = val.replace("±", "")
-    val = val.replace("µ", "u")
+    val = val.replace("±", "").replace("µ", "u")
     
-    # Cắt Metric (Metric)
     if " (" in val:
         val = val.split(" (")[0]
         
-    # CHUẨN HÓA C0G/NP0 (Xử lý dấu chấm, phẩy, và khoảng trắng)
     val = val.replace("C0G. NP0", "C0G/NP0").replace("C0G.NP0", "C0G/NP0")
     val = val.replace("C0G, NP0", "C0G/NP0").replace("C0G,NP0", "C0G/NP0")
-    
-    # Xóa khoảng trắng để chuẩn hóa form
     val = val.replace(" ", "")
     
-    # Chuẩn hóa Ohms
     val = val.replace("kOhms", "KOHM").replace("Ohms", "OHM").replace("ohms", "OHM")
     val = val.replace("Ohm", "OHM").replace("ohm", "OHM")
     val = val.replace("mOhms", "mOHM")
@@ -231,32 +209,27 @@ def clean_digikey_value(val):
     if val == "AEC-Q200":
         return "Auto"
         
-    # LOGIC QUY ĐỔI ĐƠN VỊ THÔNG MINH (1000pF -> 1nF, 2000V -> 2kV)
     match = re.match(r"^([\d\.]+)([a-zA-Z]+)$", val)
     if match:
         num_str = match.group(1)
         unit = match.group(2).upper()
         try:
             num = float(num_str)
-            # Tụ điện
             if unit == "PF" and num >= 1000:
                 num = num / 1000
                 unit = "NF"
             elif unit == "NF" and num >= 1000:
                 num = num / 1000
                 unit = "UF"
-            # Điện áp
             elif unit == "V" and num >= 1000:
                 num = num / 1000
                 unit = "KV"
             
-            # Format số (ví dụ 1.0nF -> 1nF, nhưng 4.7nF giữ nguyên)
             if num.is_integer():
                 num_str = str(int(num))
             else:
                 num_str = str(num)
             
-            # Khôi phục Case chuẩn
             if unit == "PF": unit = "pF"
             elif unit == "NF": unit = "nF"
             elif unit == "UF": unit = "uF"
@@ -299,15 +272,12 @@ def generate_standard_desc(data, prefix):
         
     return f"{prefix};" + ",".join(values)
 
-def get_suggestion(desc, prefix):
-    return desc[:37] + "..." if len(desc) > 40 else desc
-
 # ==========================================
 # 3. GIAO DIỆN STREAMLIT
 # ==========================================
-st.title("🛠️ Check Description (DigiKey API)")
+st.title("🛠️ Check Description & DigiKey API")
 
-st.subheader("Trạng thái hệ thống")
+st.subheader("Trạng thái kết nối API")
 status_col1, status_col2 = st.columns([1, 4])
 
 with status_col1:
@@ -329,63 +299,140 @@ uploaded_file = st.file_uploader("Upload BOM Excel", type=["xlsx"])
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-    if st.button("🚀 Chạy kiểm tra"):
+    if st.button("🚀 Chạy kiểm tra toàn diện"):
         token = get_token()
-        status_list, api_desc_list, suggest_list, note_list, price_1000_list = [], [], [], [], []
+        
+        # Tạo danh sách chứa kết quả cho các cột mới
+        format_status_list = []
+        digikey_status_list = []
+        api_desc_list = []
+        suggest_list = []
+        note_list = []
         
         for _, row in df.iterrows():
             desc_eng = str(row.get('Mô tả/Yêu cầu kỹ thuật', '')).strip()
             mpn = str(row.get('Mã NSX (Tham khảo hoặc tương đương)', '')).strip()
             
-            prefix = desc_eng.split(";")[0].strip().upper() if ";" in desc_eng else ""
+            # -------------------------------------------------------------
+            # BƯỚC 1: KIỂM TRA ĐỊNH DẠNG MÔ TẢ (LOCAL - KHÔNG DÙNG API)
+            # -------------------------------------------------------------
+            format_status = "🟢 Hợp lệ"
+            format_note = ""
+            user_parsed = {}
+            prefix = ""
+            
+            if ";" not in desc_eng:
+                format_status = "🔴 Sai cấu trúc"
+                format_note = "Thiếu dấu chấm phẩy (;) phân cách Tiền tố"
+            else:
+                parts = desc_eng.split(";")
+                prefix = parts[0].strip().upper()
+                params_str = parts[1]
+                
+                if prefix not in MASTER_RULES:
+                    format_status = "🔴 Sai Tiền tố"
+                    format_note = f"Tiền tố '{prefix}' không tồn tại trong Rules"
+                else:
+                    rule = MASTER_RULES[prefix]
+                    expected_attrs = rule["attrs"]
+                    user_params = [p.strip() for p in params_str.split(",")]
+                    
+                    if len(user_params) != len(expected_attrs):
+                        format_status = "🔴 Dư/Thiếu thông số"
+                        format_note = f"Yêu cầu {len(expected_attrs)} thông số ({', '.join(expected_attrs)}). Của bạn có {len(user_params)}."
+                    else:
+                        # Map thông số của user thành Dict để dành cho bước Gọt độ dài
+                        for i, attr in enumerate(expected_attrs):
+                            user_parsed[attr] = user_params[i]
+                            
+            format_status_list.append(format_status)
+
+            # -------------------------------------------------------------
+            # BƯỚC 2: GỌT ĐỘ DÀI MÔ TẢ THEO TRUNC RULES (DÙNG DỮ LIỆU CỦA BẠN)
+            # -------------------------------------------------------------
+            suggestion = "-"
+            if format_status == "🟢 Hợp lệ":
+                if len(desc_eng) <= 40:
+                    suggestion = desc_eng
+                else:
+                    current_dict = user_parsed.copy()
+                    rule = MASTER_RULES[prefix]
+                    temp_desc = desc_eng
+                    
+                    # Lần lượt xóa từng thuộc tính nằm trong danh sách trunc
+                    for attr_to_drop in rule["trunc"]:
+                        if attr_to_drop in current_dict:
+                            del current_dict[attr_to_drop]
+                            # Xếp lại chuỗi mô tả sau khi xóa
+                            rebuilt_params = [current_dict[a] for a in rule["attrs"] if a in current_dict]
+                            temp_desc = f"{prefix};" + ",".join(rebuilt_params)
+                            
+                            # Nếu độ dài đã đạt chuẩn <= 40 thì dừng thuật toán
+                            if len(temp_desc) <= 40:
+                                break
+                                
+                    # Nếu xóa hết list trunc mà vẫn > 40 thì đặt dấu ...
+                    if len(temp_desc) > 40:
+                        suggestion = temp_desc[:37] + "..."
+                    else:
+                        suggestion = temp_desc
+            
+            suggest_list.append(suggestion)
+
+            # -------------------------------------------------------------
+            # BƯỚC 3: CHECK DIGIKEY API ĐỘC LẬP
+            # -------------------------------------------------------------
+            digikey_status = "-"
+            api_desc = "-"
             
             if pd.isna(mpn) or mpn == 'nan' or mpn == "":
-                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Thiếu Mã NSX"); price_1000_list.append("")
-                continue
-                
-            if ";" not in desc_eng:
-                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Lỗi format: Thiếu dấu chấm phẩy (;)"); price_1000_list.append("")
-                continue
-                
-            if prefix not in MASTER_RULES:
-                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append(f"Sai Tiền tố: {desc_eng.split(';')[0]}"); price_1000_list.append("")
-                continue
-            
-            data = get_digikey_data(mpn, token)
-            
-            if not data:
-                status_list.append("🟡 UNVERIFIED"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Không tìm thấy dữ liệu trên DigiKey"); price_1000_list.append("")
+                digikey_status = "⚪ Trống Mã NSX"
             else:
-                std_desc = generate_standard_desc(data, prefix)
-                price_1000_list.append(get_1000pcs_price(data))
-                
+                data = get_digikey_data(mpn, token)
+                if not data:
+                    digikey_status = "🔴 Không tìm thấy"
+                else:
+                    digikey_status = "🟢 Tồn tại"
+                    if prefix in MASTER_RULES:
+                        api_desc = generate_standard_desc(data, prefix)
+                    else:
+                        api_desc = "Lỗi Tiền tố (Không thể render format)"
+            
+            digikey_status_list.append(digikey_status)
+            api_desc_list.append(api_desc)
+            
+            # -------------------------------------------------------------
+            # BƯỚC 4: TỔNG HỢP GHI CHÚ
+            # -------------------------------------------------------------
+            if format_status != "🟢 Hợp lệ":
+                note_list.append(format_note)
+            elif digikey_status == "🟢 Tồn tại" and "Lỗi Tiền tố" not in api_desc:
+                # Đối chiếu dữ liệu của bạn và API
                 clean_desc_eng = desc_eng.replace(" ", "").upper()
-                clean_std_desc = std_desc.replace(" ", "").upper()
+                clean_api_desc = str(api_desc).replace(" ", "").upper()
                 
-                # LOGIC KHỚP ĐẶC CÁCH (Cho phép user gõ C0G hoặc NP0 tự động Pass với C0G/NP0)
                 is_match = False
-                if "C0G/NP0" in clean_std_desc:
-                    alt_desc_1 = clean_std_desc.replace("C0G/NP0", "C0G")
-                    alt_desc_2 = clean_std_desc.replace("C0G/NP0", "NP0")
-                    if (clean_std_desc == clean_desc_eng) or (alt_desc_1 == clean_desc_eng) or (alt_desc_2 == clean_desc_eng):
+                if "C0G/NP0" in clean_api_desc:
+                    alt_desc_1 = clean_api_desc.replace("C0G/NP0", "C0G")
+                    alt_desc_2 = clean_api_desc.replace("C0G/NP0", "NP0")
+                    if (clean_api_desc == clean_desc_eng) or (alt_desc_1 == clean_desc_eng) or (alt_desc_2 == clean_desc_eng):
                         is_match = True
                 else:
-                    is_match = (clean_std_desc == clean_desc_eng)
+                    is_match = (clean_api_desc == clean_desc_eng)
 
                 if is_match:
-                    if len(std_desc) <= 40:
-                        status_list.append("🟢 PASS"); api_desc_list.append(std_desc); suggest_list.append(std_desc); note_list.append("Khớp 100% với dữ liệu hãng")
-                    else:
-                        status_list.append("🟡 WARNING"); api_desc_list.append(std_desc); suggest_list.append(get_suggestion(std_desc, prefix)); note_list.append("Vượt 40 ký tự.")
+                    note_list.append("Khớp 100% với dữ liệu hãng DigiKey")
                 else:
-                    status_list.append("🔴 FAIL"); api_desc_list.append(std_desc); suggest_list.append("-"); note_list.append("Thông số mô tả không khớp với API")
+                    note_list.append("Cảnh báo: Thông số BOM và thông số API lệch nhau")
+            else:
+                note_list.append("Chưa có đủ dữ liệu DigiKey để đối chiếu")
         
-        df["Status"] = status_list
+        # Add Columns to DataFrame
+        df["Format Status"] = format_status_list
+        df["DigiKey Status"] = digikey_status_list
         df["Mô tả API"] = api_desc_list
-        df["Suggest"] = suggest_list
+        df["Suggest (<40 ký tự)"] = suggest_list
         df["Note"] = note_list
-        df["Quantity Required"] = ""
-        df["1000pcs Price"] = price_1000_list
         
         st.dataframe(df)
         
