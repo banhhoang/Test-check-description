@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import io
+import json
 
 # ==========================================
 # 1. CẤU HÌNH & THƯ VIỆN MASTER RULES
@@ -23,7 +24,6 @@ NEXAR_MAPPING = {
     "Số cực": ["number of positions", "positions"]
 }
 
-# Đầy đủ Master Rules
 MASTER_RULES = {
     "RES-SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Công suất", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "RES-DIP": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Công suất", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
@@ -139,7 +139,7 @@ MASTER_RULES = {
 }
 
 # ==========================================
-# 2. CÁC HÀM XỬ LÝ (ĐỊNH NGHĨA TRƯỚC)
+# 2. HÀM XỬ LÝ DỮ LIỆU TỪ DIGIKEY API V4
 # ==========================================
 def get_token():
     url = "https://api.digikey.com/v1/oauth2/token"
@@ -147,31 +147,67 @@ def get_token():
     try:
         r = requests.post(url, data=payload)
         return r.json().get("access_token")
-    except: return None
+    except: 
+        return None
 
 def get_digikey_data(mpn, token):
-    headers = {"Authorization": f"Bearer {token}", "X-DIGIKEY-Client-Id": CLIENT_ID}
-    # 1. Thử search chi tiết
-    url = f"https://api.digikey.com/products/v4/search/{mpn}/productdetails"
-    r = requests.get(url, headers=headers)
-    if r.status_code == 200: return r.json()
-    # 2. Nếu không thấy, thử tìm kiếm keyword
-    url_search = f"https://api.digikey.com/products/v4/search?keyword={mpn}&limit=1"
-    r2 = requests.get(url_search, headers=headers)
-    if r2.status_code == 200:
-        data = r2.json()
-        if "Products" in data and len(data["Products"]) > 0: return data["Products"][0]
+    # Sử dụng Headers đầy đủ theo yêu cầu của DigiKey API v4 POST Request
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-DIGIKEY-Client-Id": CLIENT_ID,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-DIGIKEY-Locale-Site": "US",
+        "X-DIGIKEY-Locale-Language": "en",
+        "X-DIGIKEY-Locale-Currency": "USD"
+    }
+    
+    # CHIẾN THUẬT 1: TÌM KIẾM THEO TỪ KHÓA (CHUYÊN TRỊ MPN CỦA HÃNG)
+    search_url = "https://api.digikey.com/products/v4/search/keyword"
+    payload = {"Keywords": mpn}
+    
+    try:
+        r = requests.post(search_url, headers=headers, data=json.dumps(payload))
+        if r.status_code == 200:
+            data = r.json()
+            # Mức độ ưu tiên 1: Mã khớp chính xác tuyệt đối
+            if data.get("ExactMatches") and len(data["ExactMatches"]) > 0:
+                return data["ExactMatches"][0]
+            # Mức độ ưu tiên 2: Kết quả gần giống nhất
+            elif data.get("Products") and len(data["Products"]) > 0:
+                return data["Products"][0]
+    except Exception as e:
+        pass
+        
+    # CHIẾN THUẬT 2: DỰ PHÒNG TÌM THEO ĐỊNH DANH NỘI BỘ DIGIKEY
+    detail_url = f"https://api.digikey.com/products/v4/search/{mpn}/productdetails"
+    try:
+        r2 = requests.get(detail_url, headers=headers)
+        if r2.status_code == 200:
+            return r2.json()
+    except:
+        pass
+        
     return None
 
 def generate_standard_desc(data, prefix):
     if not data: return None
-    # Xử lý cả ProductParameters (của Details) và Parameters (của Search)
+    
+    # Dữ liệu từ Keyword API nằm ở "Parameters", từ Product Details nằm ở "ProductParameters"
     params = data.get("ProductParameters") or data.get("Parameters") or []
-    spec_dict = {p.get("Parameter", "").lower(): p.get("Value", "").replace(",", "") for p in params}
+    
+    # Trích xuất toàn bộ dữ liệu trả về từ API dưới dạng Chữ thường để dễ so khớp
+    spec_dict = {}
+    for p in params:
+        key = p.get("Parameter", "")
+        if isinstance(key, dict):  # Xử lý trường hợp object phức tạp của DigiKey
+            key = key.get("Name", "")
+        if key:
+            spec_dict[key.lower()] = p.get("Value", "").replace(",", "")
+            
     rule = MASTER_RULES.get(prefix)
     if not rule: return None
-    values = [spec_dict.get(k.lower(), "N/A") for attr in rule["attrs"] for k in NEXAR_MAPPING.get(attr, []) if k.lower() in spec_dict or True][:len(rule["attrs"])]
-    # Tối ưu: Lấy giá trị đầu tiên khớp
+    
     values = []
     for attr in rule["attrs"]:
         found = "N/A"
@@ -180,6 +216,7 @@ def generate_standard_desc(data, prefix):
                 found = spec_dict[key.lower()]
                 break
         values.append(found)
+        
     return f"{prefix};" + ",".join(values)
 
 def get_suggestion(desc, prefix):
@@ -191,47 +228,73 @@ def get_suggestion(desc, prefix):
 st.title("🛠️ Check Description (DigiKey API)")
 
 st.subheader("Trạng thái hệ thống")
+status_col1, status_col2 = st.columns([1, 4])
+
+with status_col1:
+    if 'digikey_token' not in st.session_state:
+        st.write("🟢 API: **Sẵn sàng**")
+    else:
+        st.write("🟢 API: **Đã kết nối**")
+
 if st.button("🔄 Kiểm tra kết nối DigiKey"):
-    if get_token(): st.success("Kết nối thành công tới DigiKey!")
-    else: st.error("Kết nối thất bại!")
+    with st.spinner("Đang thử kết nối..."):
+        token = get_token()
+        if token:
+            st.session_state['digikey_token'] = token
+            st.success("Kết nối thành công tới máy chủ DigiKey!")
+        else:
+            st.error("Kết nối thất bại. Kiểm tra lại Client ID và Secret!")
 
 uploaded_file = st.file_uploader("Upload BOM Excel", type=["xlsx"])
+
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
     if st.button("🚀 Chạy kiểm tra"):
         token = get_token()
         status_list, api_desc_list, suggest_list, note_list = [], [], [], []
+        
         for _, row in df.iterrows():
             desc_eng = str(row.get('Mô tả/Yêu cầu kỹ thuật', '')).strip()
             mpn = str(row.get('Mã NSX (Tham khảo)', '')).strip()
             
-            if pd.isna(mpn) or mpn == 'nan':
-                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Thiếu mã NSX")
-                continue
+            # Xóa sạch khoảng trắng dư thừa trong mô tả để trách lỗi Tiền tố
+            prefix = desc_eng.split(";")[0].strip() if ";" in desc_eng else ""
             
-            prefix = desc_eng.split(";")[0] if ";" in desc_eng else ""
+            if pd.isna(mpn) or mpn == 'nan' or mpn == "":
+                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Dòng này bị bỏ trống Mã NSX nên không thể tra cứu API")
+                continue
+                
+            if ";" not in desc_eng:
+                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Lỗi format: Thiếu dấu chấm phẩy (;)")
+                continue
+                
             if prefix not in MASTER_RULES:
-                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append(f"Sai tiền tố: {prefix}")
+                status_list.append("🔴 FAIL"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append(f"Sai chuẩn Tiền tố (Của bạn: {prefix})")
                 continue
             
             data = get_digikey_data(mpn, token)
+            
             if not data:
-                status_list.append("🟡 UNVERIFIED"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Không tìm thấy dữ liệu trên DigiKey")
+                status_list.append("🟡 UNVERIFIED"); api_desc_list.append("-"); suggest_list.append("-"); note_list.append("Không tìm thấy dữ liệu trên DigiKey (Check lại mã NSX)")
             else:
                 std_desc = generate_standard_desc(data, prefix)
                 if std_desc == desc_eng:
                     if len(std_desc) <= 40:
-                        status_list.append("🟢 PASS"); api_desc_list.append(std_desc); suggest_list.append(std_desc); note_list.append("Khớp 100%")
+                        status_list.append("🟢 PASS"); api_desc_list.append(std_desc); suggest_list.append(std_desc); note_list.append("Khớp 100% với dữ liệu hãng")
                     else:
-                        status_list.append("🟡 WARNING"); api_desc_list.append(std_desc); suggest_list.append(get_suggestion(std_desc, prefix)); note_list.append("Vượt 40 ký tự")
+                        status_list.append("🟡 WARNING"); api_desc_list.append(std_desc); suggest_list.append(get_suggestion(std_desc, prefix)); note_list.append("Mô tả đúng cấu trúc API nhưng vượt 40 ký tự.")
                 else:
-                    status_list.append("🔴 FAIL"); api_desc_list.append(std_desc); suggest_list.append("-"); note_list.append("Thông số không khớp")
+                    status_list.append("🔴 FAIL"); api_desc_list.append(std_desc); suggest_list.append("-"); note_list.append("Thông số mô tả không khớp với thông số thực tế của Mã NSX từ API")
         
         df["Status"] = status_list
         df["Mô tả API"] = api_desc_list
         df["Suggest"] = suggest_list
         df["Note"] = note_list
+        
         st.dataframe(df)
+        
+        # Xuất Excel
         output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer: df.to_excel(writer, index=False)
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False)
         st.download_button("📥 Tải file BOM_Check_API_Result.xlsx", data=output, file_name="BOM_Check_API_Result.xlsx")
