@@ -255,7 +255,7 @@ if uploaded_file:
         
         for _, row in df.iterrows():
             desc_eng = str(row.get('Mô tả/Yêu cầu kỹ thuật', '')).strip()
-            mpn = str(row.get('Mã NSX (Tham khảo)', '')).strip()
+            mpn = str(row.get('Mã NSX (Tham khảo hoặc tương đương)', '')).strip()
             
             # Xóa sạch khoảng trắng dư thừa trong mô tả để trách lỗi Tiền tố
             prefix = desc_eng.split(";")[0].strip() if ";" in desc_eng else ""
