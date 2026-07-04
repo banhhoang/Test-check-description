@@ -151,9 +151,14 @@ def get_token():
 def get_digikey_data(mpn, token):
     url = f"https://api.digikey.com/products/v4/search/{mpn}/productdetails"
     headers = {"Authorization": f"Bearer {token}", "X-DIGIKEY-Client-Id": CLIENT_ID}
-    try:
-        r = requests.get(url, headers=headers)
-        return r.json() if r.status_code == 200 else None
+    r = requests.get(url, headers=headers)
+    
+    # --- THÊM ĐOẠN NÀY ĐỂ DEBUG ---
+    if r.status_code != 200:
+        print(f"API Error for {mpn}: {r.status_code} - {r.text}")
+    # ------------------------------
+    
+    return r.json() if r.status_code == 200 else None
     except: return None
 
 def generate_standard_desc(data, prefix):
@@ -181,6 +186,7 @@ def get_suggestion(desc, prefix):
         # Tạm thời gọt bằng cách cắt chuỗi để đảm bảo <40, logic thực tế sẽ cần phức tạp hơn
         desc = desc[:37] + "..."
     return desc
+    
 
 # ==========================================
 # 3. GIAO DIỆN STREAMLIT & XUẤT FILE
