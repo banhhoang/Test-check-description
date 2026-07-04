@@ -126,8 +126,8 @@ MASTER_RULES = {
     "SWITCH": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
     "PUSH-BUTTON": {"attrs": ["Đặc tính", "Kích thước"], "trunc": ["Đặc tính", "Kích thước"]},
     "THERMISTOR": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
-    "IND-SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Dòng điện", "Chuẩn"], "trunc": ["Kích thước","Chuẩn"]},
-    "IND-DIP": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Dòng điện", "Chuẩn"], "trunc": ["Kích thước","Chuẩn"]},
+    "IND-SMD": {"attrs": ["Giá trị", "Sai số", "Kích thước", "DCR", "Dòng điện", "Chuẩn"], "trunc": ["Kích thước","Chuẩn"]},
+    "IND-DIP": {"attrs": ["Giá trị", "Sai số", "Kích thước", "DCR", "Dòng điện", "Chuẩn"], "trunc": ["Kích thước","Chuẩn"]},
     "IND-VR": {"attrs": ["Giá trị", "Sai số", "Kích thước", "DCR", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "IND-ARRAY": {"attrs": ["Giá trị", "Series inductance", "DCR", "Kích thước", "Chuẩn"], "trunc": ["Kích thước", "Chuẩn"]},
     "IND-KITS": {"attrs": ["Giá trị", "Sai số", "Kích thước", "Số lượng"], "trunc": ["Sai số", "Số lượng"]},
@@ -141,8 +141,8 @@ MASTER_RULES = {
     "TVS-HYRIST": {"attrs": ["Điện áp", "Dòng điện", "Kích thước", "Đặc tính"], "trunc": ["Đặc tính", "Kích thước"]},
     "TVS-VARISTOR": {"attrs": ["Maximum DC Voltage", "Maximum AC Voltage", "Current Surge", "Dimension", "Special Info"], "trunc": ["Dimension", "Special Info"]},
     "FERRITE BEAD": {"attrs": ["Giá trị", "Dòng điện", "Kích thước", "DCR"], "trunc": ["Kích thước", "DCR"]},
-    "MODULE DIP": {"attrs": ["Name", "Dimension", "Special Info"], "trunc": ["Special Info", "Dimension"]},
-    "MODULE SMD": {"attrs": ["Name", "Dimension", "Special Info"], "trunc": ["Special Info", "Dimension"]},
+    "MODULE DIP": {"attrs": ["Name","Dimension","Special Info"], "trunc": ["Special Info","Dimension"]},
+    "MODULE SMD": {"attrs": ["Name","Dimension","Special Info"], "trunc": ["Special Info","Dimension"]},
     "CHOKE SMD": {"attrs": ["Giá trị", "Dòng điện", "Kích thước", "DCR"], "trunc": ["Kích thước", "DCR"]},
     "CHOKE DIP": {"attrs": ["Giá trị", "Dòng điện", "Kích thước", "DCR"], "trunc": ["Kích thước", "DCR"]},
     "ATTENUATOR": {"attrs": ["Specification", "Special Info"], "trunc": ["Special Info"]},
@@ -322,6 +322,7 @@ def generate_standard_desc(data, prefix):
                 break
         values.append(found)
         
+    # TỰ ĐỘNG ẨN THÔNG SỐ TÙY CHỌN Ở CUỐI CHUỖI
     while values and (values[-1] == "N/A" or values[-1] == "") and rule["attrs"][len(values)-1] in OPTIONAL_ATTRS:
         values.pop()
         
