@@ -39,21 +39,34 @@ def debug_digikey_part(mpn, token):
             if r.status_code != 200: return f"Lỗi tìm kiếm: {r.status_code}"
             
             data = r.json()
-            if not data.get("ExactMatches") and not data.get("Products"): return "Không tìm thấy"
+            dk_part = None
             
-            dk_part = data["ExactMatches"][0]["DigiKeyProductNumber"] if data.get("ExactMatches") else data["Products"][0]["DigiKeyProductNumber"]
+            # CÁCH XỬ LÝ AN TOÀN TUYỆT ĐỐI: Không bao giờ dùng [0] mà không kiểm tra len()
+            exact_matches = data.get("ExactMatches", [])
+            products = data.get("Products", [])
+            
+            if exact_matches and len(exact_matches) > 0:
+                dk_part = exact_matches[0].get("DigiKeyProductNumber")
+            elif products and len(products) > 0:
+                dk_part = products[0].get("DigiKeyProductNumber")
+            
+            if not dk_part:
+                return f"Không tìm thấy mã DigiKeyPartNumber. (Dữ liệu thô: {str(data)[:100]}...)"
             
             detail_url = f"https://api.digikey.com/products/v4/search/{dk_part}/productdetails"
             r2 = requests.get(detail_url, headers=headers)
-            return r2.json() if r2.status_code == 200 else f"Lỗi lấy thông tin: {r2.status_code}"
+            
+            if r2.status_code != 200: return f"Lỗi lấy chi tiết: {r2.status_code}"
+            return r2.json()
             
         except Exception as e:
-            return f"Lỗi hệ thống: {str(e)}"
-    return "Lỗi: Quá nhiều yêu cầu, thử lại sau."
+            return f"Lỗi hệ thống trong hàm tìm kiếm: {str(e)}"
+            
+    return "Lỗi: Quá nhiều yêu cầu (429), thử lại sau."
 
 # GIAO DIỆN
-st.title("🔍 DigiKey Batch Debugger (Fix 429)")
-input_text = st.text_area("Nhập danh sách Mã NSX (mỗi mã 1 dòng):", height=200)
+st.title("🔍 DigiKey Debugger (Ultra-Safe)")
+input_text = st.text_area("Nhập danh sách Mã NSX:", height=200)
 
 if st.button("🚀 Lấy dữ liệu"):
     mpn_list = [line.strip() for line in input_text.split('\n') if line.strip()]
@@ -65,21 +78,23 @@ if st.button("🚀 Lấy dữ liệu"):
         st.error("Lỗi xác thực Token!")
     else:
         for mpn in mpn_list:
+            st.write(f"---")
             st.write(f"### Đang xử lý: {mpn}")
+            time.sleep(2)
+            
             result = debug_digikey_part(mpn, token)
             
             if isinstance(result, str):
                 st.error(f"Kết quả: {result}")
             elif result is None:
-                st.error(f"Không tìm thấy dữ liệu cho: {mpn}")
+                st.error(f"Không nhận được dữ liệu cho: {mpn}")
             else:
                 with st.expander(f"Dữ liệu thô: {mpn}"):
-                    params = result.get("Product", {}).get("Parameters", [])
+                    # Truy cập an toàn
+                    product_data = result.get("Product", {})
+                    params = product_data.get("Parameters", [])
                     if params:
                         st.table(pd.DataFrame([{"Parameter": p.get("ParameterText"), "Value": p.get("ValueText")} for p in params]))
                         st.json(params)
                     else:
-                        st.warning("Không có thông số (Parameters).")
-            
-            time.sleep(2) # Nghỉ 2s giữa các mã sau khi xử lý xong
-        st.success("Đã hoàn tất!")
+                        st.warning("Linh kiện hợp lệ nhưng không có thông số (Parameters).")
